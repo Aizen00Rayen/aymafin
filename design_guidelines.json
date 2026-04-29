@@ -1,0 +1,114 @@
+{
+  "theme": "Dark Mode Default",
+  "archetype": "Archetype 4 (Swiss & High-Contrast) adapted for Minimalist SaaS (Linear/Vercel inspired)",
+  "colors": {
+    "background": "#09090b",
+    "surface": "#18181b",
+    "surface_glass": "rgba(255, 255, 255, 0.05)",
+    "primary": "#2563eb",
+    "primary_hover": "#1d4ed8",
+    "secondary": "#22c55e",
+    "secondary_hover": "#16a34a",
+    "text_primary": "#ffffff",
+    "text_secondary": "#a1a1aa",
+    "border": "rgba(255, 255, 255, 0.1)"
+  },
+  "typography": {
+    "primary_font": "Geist, sans-serif",
+    "heading_font": "Satoshi, sans-serif",
+    "monospace_font": "JetBrains Mono, monospace",
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter text-white",
+      "h2": "text-3xl sm:text-4xl font-bold tracking-tight text-white",
+      "h3": "text-xl sm:text-2xl font-semibold tracking-tight text-zinc-200",
+      "body": "text-base leading-relaxed text-zinc-400",
+      "kpi_numbers": "text-4xl font-mono font-bold tracking-tighter text-white",
+      "overline": "text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500"
+    }
+  },
+  "glassmorphism": {
+    "card": "backdrop-blur-2xl bg-white/5 border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)] rounded-2xl",
+    "header": "backdrop-blur-xl bg-[#09090b]/60 border-b border-white/10 z-50",
+    "glow": "shadow-[0_0_40px_rgba(37,99,235,0.15)]"
+  },
+  "rtl_guidelines": {
+    "description": "Full RTL support for Arabic using Tailwind logical properties",
+    "rules": [
+      "Use ms-* and me-* instead of ml-* and mr-*",
+      "Use ps-* and pe-* instead of pl-* and pr-*",
+      "Use start-* and end-* instead of left-* and right-*",
+      "Use border-s-* and border-e-* instead of border-l-* and border-r-*",
+      "Add dir='rtl' attribute on HTML or body when Arabic is selected"
+    ]
+  },
+  "components": {
+    "button_primary": "bg-[#2563eb] hover:bg-[#1d4ed8] text-white font-medium rounded-lg px-6 py-2.5 transition-all duration-200 active:scale-95 shadow-[0_0_15px_rgba(37,99,235,0.4)] hover:shadow-[0_0_25px_rgba(37,99,235,0.6)]",
+    "button_secondary": "bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg px-6 py-2.5 transition-all duration-200 border border-white/5",
+    "button_success": "bg-[#22c55e] hover:bg-[#16a34a] text-white font-medium rounded-lg px-6 py-2.5 transition-all duration-200 shadow-[0_0_15px_rgba(34,197,94,0.4)]",
+    "kpi_card": "backdrop-blur-xl bg-white/5 border border-white/10 rounded-2xl p-6 flex flex-col gap-2 hover:-translate-y-1 transition-all duration-300 shadow-sm hover:shadow-[0_8px_32px_rgba(255,255,255,0.05)]",
+    "input_field": "bg-zinc-900/50 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-zinc-500 focus:border-[#2563eb] focus:ring-1 focus:ring-[#2563eb] transition-all w-full",
+    "chart_container": "w-full h-[300px] mt-6 p-4 backdrop-blur-md bg-white/[0.02] border border-white/5 rounded-xl"
+  },
+  "pages": {
+    "landing": {
+      "hero": "3D Floating logo using React Three Fiber. Background with subtle green/blue wavy particles. Deep dark background. Massive H1 typography.",
+      "layout": "Generous spacing (py-24 or py-32). Asymmetric 'Tetris' grid for feature highlights."
+    },
+    "auth": {
+      "layout": "Split screen layout. Left side: Form with crystal glassmorphism. Right side: abstract dark minimal texture with slight green bleed."
+    },
+    "onboarding": {
+      "layout": "Multi-step wizard centered on screen. Step indicator at top. Smooth slide transitions between steps using framer-motion."
+    },
+    "dashboard": {
+      "layout": "Sidebar navigation (collapsible). Top-left North Star Metric. Dense 'Control Room' grid layout for KPI cards (col-span-1) and main Recharts visualizations (col-span-2 or 3)."
+    },
+    "reports": {
+      "layout": "Data table view of generated PDFs. 'Download Investor-Style Report' primary action prominently placed."
+    },
+    "forecasting": {
+      "layout": "Interactive 3-scenario toggle (Optimistic, Realistic, Pessimistic) immediately impacting the main line graph below it. Colors: Green for Optimistic, Blue for Realistic, Zinc for Pessimistic."
+    },
+    "ai_chat": {
+      "layout": "Dedicated panel or side-drawer. Glassmorphic chat bubbles. User messages: #2563eb (Blue). AI messages: Zinc-800 with white text."
+    }
+  },
+  "media": {
+    "images": [
+      {
+        "category": "logo",
+        "url": "https://customer-assets.emergentagent.com/job_b01d42a3-f1ae-4d66-b970-d5ac0810ddbf/artifacts/2vbg1kvr_logo.png",
+        "description": "AYMAFIN Main Brand Logo (3D bar chart with green money in a leaf/boat shape, blue rising bars)"
+      },
+      {
+        "category": "hero_background",
+        "url": "https://images.unsplash.com/photo-1708778002586-37c4f23b7f3f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMGRhcmslMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc3NzQ5MTc0MXww&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract black and green wavy lines for landing page atmospheric background"
+      },
+      {
+        "category": "auth_background",
+        "url": "https://images.unsplash.com/photo-1755236402930-d88517a84c49?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1Mjh8MHwxfHNlYXJjaHwyfHxkYXJrJTIwbWluaW1hbCUyMHRleHR1cmV8ZW58MHx8fHwxNzc3NDkxNzQxfDA&ixlib=rb-4.1.0&q=85",
+        "description": "Dark green textured background for auth screen split layout"
+      }
+    ]
+  },
+  "libraries": {
+    "icons": "lucide-react",
+    "3d": "@react-three/fiber, @react-three/drei, three",
+    "charts": "recharts",
+    "animation": "framer-motion"
+  },
+  "testing": {
+    "rules": "All interactive elements must include data-testid (e.g., data-testid='login-button')"
+  },
+  "instructions_to_main_agent": [
+    "Strictly adhere to the dark mode Minimalist SaaS aesthetic (Vercel/Linear style).",
+    "Implement the 3D floating logo on the landing page using react-three-fiber.",
+    "Ensure complete RTL support using Tailwind logical properties (ms-, me-, ps-, pe-, start-, end-) for the Arabic language toggle. Add dir='rtl' to the html tag when Arabic is active.",
+    "Use JetBrains Mono specifically for KPI numbers, metrics, and monetary values in the dashboard.",
+    "Do NOT use pure black (#000000). Use #09090b (Zinc-950) with glassmorphism overlays (bg-white/5).",
+    "Use Recharts for the Cashflow/Expense charts and the 3-scenario forecasting views.",
+    "Ensure primary CTA uses Blue (#2563eb) and success/positive financial states use Green (#22c55e).",
+    "DO NOT USE INTER OR ROBOTO. Use Satoshi for Headings, Geist for body text, and JetBrains Mono for metrics."
+  ]
+}
