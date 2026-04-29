@@ -1,0 +1,46 @@
+{
+  "summary": "Tested AYMAFIN backend (18 pytest tests, 17 pass) and frontend E2E (landing -> register -> 4-step onboarding -> dashboard -> forecasting -> reports -> chat). Backend: auth (register/login/me/logout), business CRUD, analysis, forecasts, reports + real PDF download (>1KB, %PDF header), chat (mock replies + history) all WORKING. Frontend: all data-testids reachable, lang switcher AR -> dir=rtl OK, full happy-path flow works. ONE CRITICAL backend security finding: brute-force lockout (5-fail -> 429) is NOT enforced in the preview environment (returned 401 then 200 on correct password even after 7 wrong attempts).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/auth/login", "issue": "Brute-force lockout never returns 429. After 5+ wrong-password attempts on the same email, the next correct-password attempt returns 200 instead of 429. Likely root cause: identifier is built as f'{request.client.host}:{email}' but behind the K8s ingress, request.client.host is the in-cluster proxy/pod IP and may vary across requests, so login_attempts records are never aggregated to 5. Recommend keying on email only (or X-Forwarded-For) and ALSO rejecting login while locked_until>now even on correct password — the current check works in theory but is bypassed because attempts never reach threshold.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/auth/login", "issue": "When threshold trips, code resets attempts=0 and only stores locked_until. After locked_until expires, an attacker gets a fresh 5-attempt window. Consider keeping an audit counter."},
+      {"endpoint": "Cookies", "issue": "Auth cookie set with secure=False even though preview runs on HTTPS. Browsers accept it for now (samesite=lax) but secure=True would be safer in production."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Landing", "issues": ["Default UI language renders as EN even though i18n.js is documented to default to FR — likely picks browser language or persisted choice; verify intended default."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix brute-force lockout: change identifier to email-only (or use X-Forwarded-For for IP behind ingress). Verify by repeating 5 wrong-password attempts via curl — 6th should return 429.",
+    "Set secure=True on auth cookie in production (preview uses HTTPS).",
+    "(Optional) Confirm intended default language on landing — currently EN; if FR is intended, force i18n init lng to 'fr' regardless of browser."
+  ],
+  "critical_code_review_comments": [
+    "server.py: brute-force identifier 'ip:email' is unreliable behind a proxy — switch to email-only or honour X-Forwarded-For.",
+    "server.py: in lockout branch, attempts is reset to 0 — a determined attacker can keep cycling 5-attempt windows; consider locking the user record instead.",
+    "server.py uses @app.on_event('startup')/'shutdown') which are deprecated in FastAPI; migrate to lifespan handlers.",
+    "compute_analysis recommendations are hard-coded French strings — won't be translated when UI is in EN/AR. Either return i18n keys or localise on the frontend.",
+    "Cookie secure=False on HTTPS preview is OK for dev but must be True in prod."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (created)",
+    "/app/test_reports/pytest/pytest_results.xml (generated)"
+  ],
+  "success_rate": {"backend": "94% (17/18)", "frontend": "100% (all flows)"},
+  "test_credentials": "Admin: admin@aymafin.com / admin123. Pre-existing test user: testuser@aymafin.com / TestUser123!. New users were registered with TEST_e2e_<rand>@aymafin.com / TestUser123! and testui_<rand>@aymafin.com / TestUser123!.",
+  "seed_data_creation": "Multiple TEST_*@aymafin.com and testui_*@aymafin.com users were registered during testing (each with a 'TEST_AcmeUI'/'TEST_AcmeDZ' business). Safe to leave or purge by email-prefix TEST_/testui_.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test file at /app/backend/tests/backend_test.py is reusable. The brute-force test (TestAuth.test_brute_force_lockout_429_after_5_fails) is the only failing test and reflects a real security bug, not a test-script issue. Run with: pytest /app/backend/tests/backend_test.py -v --junitxml=/app/test_reports/pytest/pytest_results.xml. Frontend testids are well-distributed (see Onboarding uses ob-name/ob-type/ob-stream-name-{i}/ob-exp-name-{i}/ob-capital — NOT ob-business-name/ob-employees).",
+  "rca_of_the_issue": "Brute-force lockout bug RCA — Reproduction: register a fresh user, send 5+ wrong-password POST /api/auth/login, then send a correct password — should return 429 but returns 200. Root cause hypothesis: identifier `f'{request.client.host}:{email}' ` resolves request.client.host to the in-cluster ingress proxy IP that varies between requests (or to a pod-internal address), so each failed attempt creates/updates a different document and attempts never reach LOCKOUT_THRESHOLD=5. Fix: derive client IP from `request.headers.get('x-forwarded-for','').split(',')[0].strip() or request.client.host`, or simply key by email only for lockout. Also consider not resetting attempts to 0 when locking, and reject correct-password logins while locked_until is in the future (current code already does this — the bug is solely that attempts never accumulate)."
+}
