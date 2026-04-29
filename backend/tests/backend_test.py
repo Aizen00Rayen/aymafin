@@ -325,6 +325,9 @@ class TestBankPdf:
         assert len(r.content) > 3000, f"PDF too small: {len(r.content)}"
         cd = r.headers.get("content-disposition", "")
         assert "aymafin-bna-" in cd
+        # Iter3: response headers expose X-Bank-Used + X-Lang-Used
+        assert r.headers.get("x-bank-used") == "bna", f"X-Bank-Used header missing/wrong: {dict(r.headers)}"
+        assert r.headers.get("x-lang-used") == "fr"
 
     def test_pdf_badr_ar(self, reg_session):
         rid = reg_session.post(f"{API}/reports", timeout=15).json()["id"]
@@ -348,6 +351,54 @@ class TestBankPdf:
         assert r.content[:4] == b"%PDF"
         # Filename should fall back to generic
         assert "aymafin-generic-" in r.headers.get("content-disposition", "")
+        # Iter3: headers reflect resolved fallback values
+        assert r.headers.get("x-bank-used") == "generic"
+        assert r.headers.get("x-lang-used") in ("fr", "en", "ar")
+
+
+# ---------- Iter3: Legacy snapshot PDF compatibility ----------
+class TestLegacyPdf:
+    def test_legacy_recommendations_shape_pdf_renders(self, reg_session, admin_session):
+        """A report whose snapshot.recommendations is the legacy [{title, detail}]
+        list (not the new [{key, params}] shape) must still render to a valid PDF."""
+        # Create a normal report first (gives us a doc with the right user_id, etc.)
+        rid = reg_session.post(f"{API}/reports", timeout=15).json()["id"]
+
+        # Mutate the report doc directly via a tiny admin-only helper would be ideal,
+        # but since none exists we use a backdoor: write to mongo via the python driver.
+        import asyncio
+        import sys
+        sys.path.insert(0, "/app/backend")
+        from config import db  # noqa: E402
+
+        legacy_snapshot = {
+            "revenue_monthly": 1000000,
+            "expenses_monthly": 800000,
+            "profit_monthly": 200000,
+            "margin_pct": 20.0,
+            "burn_rate_monthly": 0,
+            "runway_months": None,
+            "risk_level": "low",
+            "risk_score": 30,
+            "currency": "DZD",
+            "recommendations": [
+                {"title": "Réduire les coûts", "detail": "Diminuer les charges fixes de 10%"},
+                {"title": "Augmenter le revenu", "detail": "Lancer une nouvelle gamme produits"},
+            ],
+        }
+
+        async def _patch():
+            await db.reports.update_one(
+                {"id": rid},
+                {"$set": {"snapshot": legacy_snapshot}},
+            )
+        asyncio.get_event_loop().run_until_complete(_patch()) if False else asyncio.run(_patch())
+
+        # Now download — must NOT 500
+        r = reg_session.get(f"{API}/reports/{rid}/pdf", params={"bank": "generic", "lang": "fr"}, timeout=30)
+        assert r.status_code == 200, f"legacy snapshot PDF should not 500, got {r.status_code}: {r.text[:300]}"
+        assert r.content[:4] == b"%PDF"
+        assert len(r.content) > 1500
 
 
 # ---------- Iter2: Admin endpoints ----------
@@ -361,7 +412,7 @@ class TestAdmin:
         r = admin_session.get(f"{API}/admin/stats", timeout=15)
         assert r.status_code == 200, r.text
         data = r.json()
-        for k in ["total_users", "onboarded_users", "total_businesses", "total_reports", "total_chats", "new_users_7d"]:
+        for k in ["total_users", "onboarded_users", "total_businesses", "total_reports", "total_chats", "new_users_7d", "deleted_users"]:
             assert k in data, f"missing {k}"
             assert isinstance(data[k], int), f"{k} should be int, got {type(data[k])}"
 
@@ -388,7 +439,7 @@ class TestAdmin:
         assert r.status_code == 400, f"expected 400 self-delete, got {r.status_code}: {r.text}"
 
     def test_admin_delete_user_cascades(self, admin_session):
-        # Create a throwaway user, then delete via admin and verify cascade
+        # Create a throwaway user, then delete via admin and verify cascade (soft delete in iter3)
         s = requests.Session()
         email = f"TEST_del_{uuid.uuid4().hex[:6]}@aymafin.com"
         r = s.post(f"{API}/auth/register",
@@ -401,21 +452,49 @@ class TestAdmin:
         s.post(f"{API}/reports", timeout=15)
         s.post(f"{API}/chat", json={"message": "hello"}, timeout=15)
 
-        # admin deletes
+        # admin soft-deletes
         r2 = admin_session.delete(f"{API}/admin/users/{target_id}", timeout=15)
         assert r2.status_code == 200, r2.text
         body = r2.json()
         assert body.get("ok") is True
-        assert body.get("deleted_user") == target_id
+        assert "soft_deleted_at" in body
+        assert body.get("user_id") == target_id
 
-        # Verify user is no longer listed
+        # Verify user is no longer listed by default
         users = admin_session.get(f"{API}/admin/users", timeout=15).json()
         ids = [u["id"] for u in users]
         assert target_id not in ids
 
-        # Re-deleting non-existent user -> 404
+        # With include_deleted=true, user should appear w/ deleted_at field
+        users_all = admin_session.get(f"{API}/admin/users", params={"include_deleted": "true"}, timeout=15).json()
+        ids_all = [u["id"] for u in users_all]
+        assert target_id in ids_all
+        deleted_user = next(u for u in users_all if u["id"] == target_id)
+        assert deleted_user.get("deleted_at"), "deleted_at should be present"
+
+        # Deleted user cannot login (401)
+        s2 = requests.Session()
+        rl = s2.post(f"{API}/auth/login", json={"email": email, "password": "DelMe123!"}, timeout=15)
+        assert rl.status_code == 401, f"expected 401 for deleted user login, got {rl.status_code}"
+
+        # Re-deleting already-deleted user -> 400 (already deleted)
         r3 = admin_session.delete(f"{API}/admin/users/{target_id}", timeout=15)
-        assert r3.status_code == 404
+        assert r3.status_code == 400, f"expected 400 already-deleted, got {r3.status_code}: {r3.text}"
+
+        # Restore
+        r4 = admin_session.post(f"{API}/admin/users/{target_id}/restore", timeout=15)
+        assert r4.status_code == 200, r4.text
+        body4 = r4.json()
+        assert body4.get("ok") is True and body4.get("restored") is True
+
+        # After restore, login works again
+        s3 = requests.Session()
+        rl2 = s3.post(f"{API}/auth/login", json={"email": email, "password": "DelMe123!"}, timeout=15)
+        assert rl2.status_code == 200, f"expected 200 after restore, got {rl2.status_code}"
+
+        # Restore an already-active user -> 400
+        r5 = admin_session.post(f"{API}/admin/users/{target_id}/restore", timeout=15)
+        assert r5.status_code == 400
 
     def test_admin_delete_unauth(self, reg_session):
         # Non-admin trying to delete some random id -> 403 (auth check before existence)

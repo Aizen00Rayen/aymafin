@@ -1,0 +1,33 @@
+{
+  "summary": "Tested AYMAFIN iteration 3 (refactor + soft delete + admin polish + legacy PDF bug). Backend: 31/31 pytest tests PASS (extended iter2 file: added TestLegacyPdf class, updated TestAdmin for soft-delete/restore semantics, updated TestBankPdf to assert X-Bank-Used + X-Lang-Used response headers, updated TestAdmin stats for deleted_users key). Frontend: admin page polish all verified — search filter (typing 'admin' narrows 14→1), sortable column headers (clicking name asc→desc with arrow icon), deleted toggle, delete modal opens via admin-delete-{id} → cancel/confirm testids, refresh button reloads, avatars/role chips/pending tag rendered, self-row delete button disabled. Legacy PDF bug confirmed FIXED (synthetic legacy snapshot with [{title,detail}] recommendations rendered as valid 4kb+ %PDF, no 500). Soft-delete round-trip verified: DELETE returns soft_deleted_at, user disappears from default GET /api/admin/users, appears under ?include_deleted=true with deleted_at field, deleted user gets 401 on login, restore re-enables login, double-delete returns 400, double-restore returns 400, self-delete returns 400.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "auth_utils.get_current_user filters deleted_at — verified deleted users get 401 on login + on /me. Good.",
+    "admin.py uses single $lookup pipeline replacing N+1 count_documents — verified response shape unchanged and admin/users still returns id/email/business/reports_count/chats_count/deleted_at correctly.",
+    "pdf_builder._resolve_reco supports both new {key,params} and legacy {title,detail} — confirmed via TestLegacyPdf test (legacy snapshot mutated directly in mongo, PDF renders fine).",
+    "reports.py exposes X-Bank-Used + X-Lang-Used headers and CORS expose_headers includes them in app.py — verified header values match resolved bank/lang (including fallback to generic when invalid).",
+    "Soft-delete cascades to businesses + reports collections via {deleted_at, deleted_by} fields. Restore $unsets these. Atomic via update_many — good.",
+    "Minor: Admin.jsx uses inline event handlers (toggleSort, onClick={() => setShowDeleted(...)}) which create new function instances on each render. For a 14-row table this is negligible, but if the table grows to 1000+ rows consider memoizing with useCallback.",
+    "Minor: server.py is now a 5-line shim per spec — clean refactor. Routers are under 100 lines each. Good split."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (added TestLegacyPdf with synthetic legacy-snapshot mongo write; updated TestAdmin.test_admin_delete_user_cascades for soft-delete + restore round-trip + double-delete 400; updated TestAdmin.test_admin_stats_admin_ok to assert deleted_users key; updated TestBankPdf.test_pdf_bna_fr + test_pdf_invalid_bank_falls_back to assert X-Bank-Used + X-Lang-Used headers — 31 tests total, all green)"
+  ],
+  "success_rate": {"backend": "100% (31/31)", "frontend": "100% (all 14 listed iter3 features verified)"},
+  "test_credentials": "Admin: admin@aymafin.com / admin123. Test user: testuser@aymafin.com / TestUser123!. Pytest also creates TEST_e2e_/TEST_reg_/TEST_wrong_/TEST_bf_/TEST_del_ throwaway users (one is admin-deleted then restored by test_admin_delete_user_cascades).",
+  "seed_data_creation": "Each pytest run registers ~6 TEST_*@aymafin.com users; one is soft-deleted then restored by the cascade test. Safe to leave or purge by 'TEST_' email prefix. Currently 14 users in dev DB.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression suite at /app/backend/tests/backend_test.py — run: pytest /app/backend/tests/backend_test.py -v --junitxml=/app/test_reports/pytest/pytest_results.xml. All 31 tests green. TestLegacyPdf writes directly to mongo via config.db (asyncio.run) to inject a legacy {title,detail} snapshot. Admin frontend testids: admin-page/admin-stats/admin-toolbar/admin-search/admin-toggle-deleted/admin-count-display/admin-users-table/admin-refresh/admin-user-row-{id}/admin-delete-{id}/admin-restore-{id}/admin-delete-modal/admin-delete-confirm/admin-delete-cancel. Auth route is /auth (login form has data-testid=auth-email/auth-password/auth-submit). Currently 0 soft-deleted users in the system (the cascade test cleans up after itself by restoring).",
+  "rca_of_the_issue": "N/A — all 14 listed iter3 test cases pass. Iter3 PDF 500 bug (legacy snapshot {title,detail} crashing new builder that expected {key,params}) is fixed in pdf_builder._resolve_reco which now branches on shape — confirmed via dedicated TestLegacyPdf regression test."
+}
