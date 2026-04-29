@@ -22,20 +22,15 @@ Build AYMAFIN — an AI-powered financial decision engine SaaS for Algerian SMEs
 6. Mock-intelligent AI chat (deterministic, context-aware)
 7. Multi-language FR (default) / EN / AR + RTL
 
-## What's Implemented (2026-04-29 — iteration 2)
-- ✅ Backend: FastAPI server with JWT cookie auth, bcrypt, brute-force lockout (email-keyed), admin seed
-- ✅ Onboarding endpoint (POST/GET /api/business)
-- ✅ Decision engine (/api/analysis) — recommendations as `{key, params}` for FE/PDF i18n; activity log also keyed
-- ✅ Forecasts (/api/forecasts) — 3 scenarios, 12 months, cash projection
-- ✅ Reports — real ReportLab PDF, **bank-specific templates** (generic / BNA / BEA / CPA / BADR) with bank-coloured headers, full names FR/EN/AR, lender-notes localised
-- ✅ Bank list endpoint /api/banks
-- ✅ **Admin endpoints** /api/admin/stats, /api/admin/users (list with business+counts), DELETE /api/admin/users/{id} (cascades)
-- ✅ Chat (/api/chat + /history) — mock intelligent replies
-- ✅ Frontend: Landing, Auth, Onboarding (4-step), Dashboard, Forecasting, Reports (with bank selector), Chat, Settings, **Admin dashboard** (stats grid + users table + delete)
-- ✅ Admin sidebar entry visible only to admins; admin login redirects to /admin
-- ✅ i18n FR/EN/AR with full RTL — recommendations + activity log + bank labels translated
-- ✅ Animated hero (logo + glow rings + particles) via framer-motion
-- ✅ Tested: **30/30 backend tests + 100% frontend flows** (testing_agent_v3 iteration_2)
+## What's Implemented (2026-04-29 — iteration 3)
+- ✅ **Backend refactor**: `server.py` reduced to 5-line shim. Code split into `config.py`, `auth_utils.py`, `finance.py`, `pdf_builder.py`, `i18n_data.py` and `routers/{auth,business,reports,chat,admin}.py` — composed in `app.py` with FastAPI `lifespan` handler. Each router < 100 lines.
+- ✅ **PDF builder bug fix** (`_resolve_reco`): handles BOTH new `{key, params}` and legacy `{title, detail}` recommendation snapshots — old reports no longer 500.
+- ✅ **Soft delete** (admin): `DELETE /api/admin/users/{id}` cascades `{deleted_at, deleted_by}` to user/business/reports. Reads default-filter deleted. `?include_deleted=true` shows them. `POST /api/admin/users/{id}/restore` reverses. Deleted users get 401 on login.
+- ✅ **Aggregation perf**: `/api/admin/users` is a single `$lookup` pipeline (was N+1 count_documents).
+- ✅ **Admin UI polish**: gradient stat cards (with deleted_users + 7d trend), search box, sortable columns (name/email/revenue/reports/created), avatar initials, role/state chips, pending tag, deleted toggle, restore action, soft-delete confirm modal, hover-to-reveal delete, refresh button.
+- ✅ Frontend: animated hero, i18n FR/EN/AR + RTL, dashboard, forecasting, reports (5 banks), chat, settings, admin
+- ✅ Tested: **31/31 backend tests + 100% frontend flows** (testing_agent_v3 iteration_3)
+- ✅ X-Bank-Used / X-Lang-Used response headers exposed via CORS
 
 ## Test Credentials
 See `/app/memory/test_credentials.md`.
