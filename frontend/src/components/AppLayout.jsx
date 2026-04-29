@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../contexts/AuthContext";
 import {
-  LayoutDashboard, TrendingUp, FileText, MessageSquareText, Settings, LogOut,
+  LayoutDashboard, TrendingUp, FileText, MessageSquareText, Settings, LogOut, Shield,
 } from "lucide-react";
 import Navbar from "./Navbar";
 
@@ -20,6 +20,7 @@ export default function AppLayout({ children }) {
     { to: "/reports", label: t("nav.reports"), icon: FileText, tid: "side-reports" },
     { to: "/chat", label: t("nav.chat"), icon: MessageSquareText, tid: "side-chat" },
     { to: "/settings", label: t("nav.settings"), icon: Settings, tid: "side-settings" },
+    ...(user?.role === "admin" ? [{ to: "/admin", label: t("admin.nav"), icon: Shield, tid: "side-admin" }] : []),
   ];
 
   return (

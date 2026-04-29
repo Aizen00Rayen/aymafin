@@ -12,6 +12,7 @@ import Forecasting from "@/pages/Forecasting";
 import Reports from "@/pages/Reports";
 import Chat from "@/pages/Chat";
 import Settings from "@/pages/Settings";
+import Admin from "@/pages/Admin";
 import { Toaster } from "sonner";
 
 export default function App() {
@@ -40,6 +41,9 @@ export default function App() {
           } />
           <Route path="/settings" element={
             <ProtectedRoute requireOnboarding={false}><Settings /></ProtectedRoute>
+          } />
+          <Route path="/admin" element={
+            <ProtectedRoute requireOnboarding={false}><Admin /></ProtectedRoute>
           } />
         </Routes>
         <Toaster position="top-right" theme="dark" richColors />

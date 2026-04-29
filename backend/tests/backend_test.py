@@ -221,10 +221,22 @@ class TestAnalysis:
         assert a["profit_monthly"] == 200000
         assert "runway_months" in a  # may be None for profitable
         assert isinstance(a["recommendations"], list) and len(a["recommendations"]) >= 1
+        # Iter2: recommendations are now [{key, params}] (i18n keys, not raw FR strings)
+        for r in a["recommendations"]:
+            assert isinstance(r, dict), f"reco should be dict, got {type(r)}: {r}"
+            assert "key" in r and isinstance(r["key"], str)
+            assert "params" in r and isinstance(r["params"], dict)
         assert a["risk_level"] in ("low", "medium", "high")
 
         assert isinstance(data["cashflow"], list) and len(data["cashflow"]) == 12
         assert isinstance(data["expense_breakdown"], list)
+        # Iter2: activity log is also localized with key/params/ts/type
+        assert "activity" in data and isinstance(data["activity"], list) and len(data["activity"]) >= 1
+        for act in data["activity"]:
+            assert "key" in act and isinstance(act["key"], str)
+            assert "params" in act and isinstance(act["params"], dict)
+            assert "ts" in act
+            assert "type" in act
 
     def test_forecasts_3_scenarios_12_months(self, reg_session):
         r = reg_session.get(f"{API}/forecasts", timeout=20)
@@ -283,3 +295,130 @@ class TestChat:
         assert isinstance(items, list)
         assert len(items) >= 2
         assert all("message" in i and "reply" in i for i in items)
+
+
+# ---------- Iter2: Banks endpoint ----------
+class TestBanks:
+    def test_list_banks(self, session):
+        r = session.get(f"{API}/banks", timeout=15)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert isinstance(data, list)
+        codes = {b["code"] for b in data}
+        # Must include all 5 supported banks
+        for c in ["generic", "bna", "bea", "cpa", "badr"]:
+            assert c in codes, f"missing bank {c} in {codes}"
+        for b in data:
+            assert "name" in b
+            assert "color" in b
+            assert "full_name_fr" in b and "full_name_en" in b and "full_name_ar" in b
+
+
+# ---------- Iter2: Bank-specific PDF templates + lang ----------
+class TestBankPdf:
+    def test_pdf_bna_fr(self, reg_session):
+        # ensure a report exists
+        rid = reg_session.post(f"{API}/reports", timeout=15).json()["id"]
+        r = reg_session.get(f"{API}/reports/{rid}/pdf", params={"bank": "bna", "lang": "fr"}, timeout=30)
+        assert r.status_code == 200, r.text
+        assert r.content[:4] == b"%PDF"
+        assert len(r.content) > 3000, f"PDF too small: {len(r.content)}"
+        cd = r.headers.get("content-disposition", "")
+        assert "aymafin-bna-" in cd
+
+    def test_pdf_badr_ar(self, reg_session):
+        rid = reg_session.post(f"{API}/reports", timeout=15).json()["id"]
+        r = reg_session.get(f"{API}/reports/{rid}/pdf", params={"bank": "badr", "lang": "ar"}, timeout=30)
+        assert r.status_code == 200
+        assert r.content[:4] == b"%PDF"
+        assert len(r.content) > 3000
+        assert "aymafin-badr-" in r.headers.get("content-disposition", "")
+
+    def test_pdf_cpa_en(self, reg_session):
+        rid = reg_session.post(f"{API}/reports", timeout=15).json()["id"]
+        r = reg_session.get(f"{API}/reports/{rid}/pdf", params={"bank": "cpa", "lang": "en"}, timeout=30)
+        assert r.status_code == 200
+        assert r.content[:4] == b"%PDF"
+        assert len(r.content) > 3000
+
+    def test_pdf_invalid_bank_falls_back(self, reg_session):
+        rid = reg_session.post(f"{API}/reports", timeout=15).json()["id"]
+        r = reg_session.get(f"{API}/reports/{rid}/pdf", params={"bank": "unknown_xyz", "lang": "klingon"}, timeout=30)
+        assert r.status_code == 200, f"expected fallback 200, got {r.status_code}: {r.text[:200]}"
+        assert r.content[:4] == b"%PDF"
+        # Filename should fall back to generic
+        assert "aymafin-generic-" in r.headers.get("content-disposition", "")
+
+
+# ---------- Iter2: Admin endpoints ----------
+class TestAdmin:
+    def test_admin_stats_requires_admin(self, reg_session):
+        # Non-admin -> 403
+        r = reg_session.get(f"{API}/admin/stats", timeout=15)
+        assert r.status_code == 403, f"expected 403 for non-admin, got {r.status_code}"
+
+    def test_admin_stats_admin_ok(self, admin_session):
+        r = admin_session.get(f"{API}/admin/stats", timeout=15)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        for k in ["total_users", "onboarded_users", "total_businesses", "total_reports", "total_chats", "new_users_7d"]:
+            assert k in data, f"missing {k}"
+            assert isinstance(data[k], int), f"{k} should be int, got {type(data[k])}"
+
+    def test_admin_users_requires_admin(self, reg_session):
+        r = reg_session.get(f"{API}/admin/users", timeout=15)
+        assert r.status_code == 403
+
+    def test_admin_users_admin_ok(self, admin_session):
+        r = admin_session.get(f"{API}/admin/users", timeout=15)
+        assert r.status_code == 200, r.text
+        users = r.json()
+        assert isinstance(users, list) and len(users) >= 1
+        u0 = users[0]
+        for k in ["id", "email", "name", "role", "onboarded", "created_at", "business", "reports_count", "chats_count"]:
+            assert k in u0, f"missing field {k} in admin users response"
+        # password_hash MUST not leak
+        assert "password_hash" not in u0
+        # _id must not leak
+        assert "_id" not in u0
+
+    def test_admin_cannot_delete_self(self, admin_session):
+        me = admin_session.get(f"{API}/auth/me", timeout=15).json()
+        r = admin_session.delete(f"{API}/admin/users/{me['id']}", timeout=15)
+        assert r.status_code == 400, f"expected 400 self-delete, got {r.status_code}: {r.text}"
+
+    def test_admin_delete_user_cascades(self, admin_session):
+        # Create a throwaway user, then delete via admin and verify cascade
+        s = requests.Session()
+        email = f"TEST_del_{uuid.uuid4().hex[:6]}@aymafin.com"
+        r = s.post(f"{API}/auth/register",
+                   json={"email": email, "password": "DelMe123!", "name": "DelMe"},
+                   timeout=15)
+        assert r.status_code == 200
+        target_id = r.json()["id"]
+        # add a business so cascade has something to remove
+        s.post(f"{API}/business", json=SAMPLE_BUSINESS, timeout=15)
+        s.post(f"{API}/reports", timeout=15)
+        s.post(f"{API}/chat", json={"message": "hello"}, timeout=15)
+
+        # admin deletes
+        r2 = admin_session.delete(f"{API}/admin/users/{target_id}", timeout=15)
+        assert r2.status_code == 200, r2.text
+        body = r2.json()
+        assert body.get("ok") is True
+        assert body.get("deleted_user") == target_id
+
+        # Verify user is no longer listed
+        users = admin_session.get(f"{API}/admin/users", timeout=15).json()
+        ids = [u["id"] for u in users]
+        assert target_id not in ids
+
+        # Re-deleting non-existent user -> 404
+        r3 = admin_session.delete(f"{API}/admin/users/{target_id}", timeout=15)
+        assert r3.status_code == 404
+
+    def test_admin_delete_unauth(self, reg_session):
+        # Non-admin trying to delete some random id -> 403 (auth check before existence)
+        r = reg_session.delete(f"{API}/admin/users/{uuid.uuid4()}", timeout=15)
+        assert r.status_code == 403
+

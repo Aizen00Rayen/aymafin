@@ -28,7 +28,9 @@ export default function Auth() {
       const data = mode === "login"
         ? await login(email, password)
         : await register(email, password, name);
-      const redirectTo = location.state?.from?.pathname || (data.onboarded ? "/dashboard" : "/onboarding");
+      let redirectTo;
+      if (data.role === "admin") redirectTo = "/admin";
+      else redirectTo = location.state?.from?.pathname || (data.onboarded ? "/dashboard" : "/onboarding");
       navigate(redirectTo, { replace: true });
     } catch (e) {
       setErr(formatApiError(e.response?.data?.detail) || e.message);

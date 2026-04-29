@@ -14,6 +14,6 @@ export default function ProtectedRoute({ children, requireOnboarding = true }) {
     );
   }
   if (!user) return <Navigate to="/auth" state={{ from: location }} replace />;
-  if (requireOnboarding && !user.onboarded) return <Navigate to="/onboarding" replace />;
+  if (requireOnboarding && !user.onboarded && user.role !== "admin") return <Navigate to="/onboarding" replace />;
   return children;
 }

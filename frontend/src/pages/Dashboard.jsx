@@ -102,8 +102,8 @@ export default function Dashboard() {
                 className="flex gap-3 items-start" data-testid={`reco-item-${i}`}>
                 <div className="size-6 mt-0.5 rounded-md bg-[#2563eb]/15 text-blue-400 grid place-items-center text-xs font-mono font-bold shrink-0">{i + 1}</div>
                 <div>
-                  <div className="font-medium text-white">{r.title}</div>
-                  <div className="text-sm text-zinc-400">{r.detail}</div>
+                  <div className="font-medium text-white">{t(`recos.${r.key}.title`, r.params || {})}</div>
+                  <div className="text-sm text-zinc-400">{t(`recos.${r.key}.detail`, r.params || {})}</div>
                 </div>
               </motion.li>
             ))}
@@ -178,12 +178,16 @@ export default function Dashboard() {
       <div className="glass rounded-2xl p-6" data-testid="activity-card">
         <div className="text-xs font-mono uppercase tracking-[0.2em] text-zinc-500 mb-4">{t("dashboard.recentActivity")}</div>
         <ul className="space-y-2">
-          {data.activity.map((a) => (
-            <li key={a.id} className="flex items-center justify-between border-b border-white/5 last:border-0 py-2.5">
-              <div className="text-sm text-zinc-300">{a.title}</div>
-              <div className="text-xs text-zinc-500 font-mono">{new Date(a.ts).toLocaleString()}</div>
-            </li>
-          ))}
+          {data.activity.map((act) => {
+            const params = { ...(act.params || {}) };
+            if (params.level) params.level = t(`risk.${params.level}`);
+            return (
+              <li key={act.id} className="flex items-center justify-between border-b border-white/5 last:border-0 py-2.5">
+                <div className="text-sm text-zinc-300">{t(`activityLog.${act.key}`, params)}</div>
+                <div className="text-xs text-zinc-500 font-mono">{new Date(act.ts).toLocaleString()}</div>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </AppLayout>

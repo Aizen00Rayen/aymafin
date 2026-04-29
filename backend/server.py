@@ -268,20 +268,21 @@ def compute_analysis(biz: dict) -> dict:
 
     risk_level = "low" if risk_score <= 1 else ("medium" if risk_score <= 4 else "high")
 
-    # Recommendations (Algerian SME flavoured)
+    # Recommendations (Algerian SME flavoured) — returned as i18n keys + params
+    # so the frontend / PDF can localize them based on user language.
     recs = []
     if margin < 15:
-        recs.append({"title": "Améliorer la marge brute", "detail": "Renégocier vos contrats fournisseurs et viser une marge brute > 25%, standard exigé par la plupart des banques algériennes."})
+        recs.append({"key": "improve_margin", "params": {}})
     if runway_months is not None and runway_months < 9:
-        recs.append({"title": "Sécuriser un financement", "detail": "Préparer un dossier de crédit BNA/BEA (compte d'exploitation prévisionnel + bilan) — runway actuel inférieur à 9 mois."})
+        recs.append({"key": "secure_financing", "params": {"runway": round(runway_months, 1)}})
     if len(biz.get("revenue_streams", [])) <= 1:
-        recs.append({"title": "Diversifier les revenus", "detail": "Une dépendance à un seul flux de revenus augmente le risque. Ajoutez 1 à 2 streams complémentaires."})
+        recs.append({"key": "diversify_revenue", "params": {}})
     if expenses > 0 and revenue > 0:
         top = max(biz.get("expenses", []), key=lambda x: float(x.get("monthly_amount", 0)), default=None)
         if top and float(top.get("monthly_amount", 0)) / max(expenses, 1) > 0.4:
-            recs.append({"title": f"Optimiser '{top['name']}'", "detail": "Cette ligne représente >40% de vos charges. Identifier des leviers de réduction."})
+            recs.append({"key": "optimize_expense", "params": {"name": top["name"]}})
     if not recs:
-        recs.append({"title": "Préparer le passage à l'échelle", "detail": "Indicateurs sains. Définir un plan d'investissement 12 mois pour accélérer la croissance."})
+        recs.append({"key": "scale_up", "params": {}})
 
     return {
         "revenue_monthly": round(revenue, 2),
@@ -352,9 +353,9 @@ async def get_analysis(user: dict = Depends(get_current_user)):
         })
 
     activity = [
-        {"id": str(uuid.uuid4()), "title": "Analyse mensuelle générée", "type": "analysis", "ts": datetime.now(timezone.utc).isoformat()},
-        {"id": str(uuid.uuid4()), "title": f"Risque évalué: {analysis['risk_level'].upper()}", "type": "risk", "ts": datetime.now(timezone.utc).isoformat()},
-        {"id": str(uuid.uuid4()), "title": f"{len(analysis['recommendations'])} recommandation(s) disponibles", "type": "reco", "ts": datetime.now(timezone.utc).isoformat()},
+        {"id": str(uuid.uuid4()), "key": "activity_analysis_generated", "params": {}, "type": "analysis", "ts": datetime.now(timezone.utc).isoformat()},
+        {"id": str(uuid.uuid4()), "key": "activity_risk_evaluated", "params": {"level": analysis['risk_level']}, "type": "risk", "ts": datetime.now(timezone.utc).isoformat()},
+        {"id": str(uuid.uuid4()), "key": "activity_recommendations", "params": {"count": len(analysis['recommendations'])}, "type": "reco", "ts": datetime.now(timezone.utc).isoformat()},
     ]
 
     return {
@@ -399,41 +400,194 @@ async def create_report(user: dict = Depends(get_current_user)):
     return {"id": rid, "title": doc["title"]}
 
 
-def _build_pdf(biz: dict, analysis: dict, forecasts: dict) -> bytes:
+# ---------- i18n & Bank dictionaries (used by PDF and chat) ----------
+PDF_I18N = {
+    "fr": {
+        "title": "Rapport Financier prêt pour la Banque",
+        "business": "Entreprise", "type": "Type", "country": "Pays", "currency": "Devise",
+        "generated": "Généré le",
+        "exec_summary": "Résumé exécutif",
+        "indicator": "Indicateur", "value": "Valeur",
+        "rev_m": "Revenu mensuel", "exp_m": "Charges mensuelles", "profit_m": "Profit mensuel",
+        "margin": "Marge brute", "burn": "Burn rate (mensuel)",
+        "runway": "Runway", "months": "mois", "profitable": "Rentable",
+        "risk": "Niveau de risque",
+        "recos": "Recommandations",
+        "forecast_title": "Prévision 12 mois (scénario réaliste)",
+        "month": "Mois", "rev": "Revenu", "exp": "Charges", "profit": "Profit", "cash": "Trésorerie",
+        "lender_notes": "Notes pour le prêteur",
+        "rec": {
+            "improve_margin": ("Améliorer la marge brute", "Renégocier vos contrats fournisseurs et viser une marge brute > 25%, standard exigé par la plupart des banques algériennes."),
+            "secure_financing": ("Sécuriser un financement", "Préparer un dossier de crédit (compte d'exploitation prévisionnel + bilan) — runway actuel: {runway} mois."),
+            "diversify_revenue": ("Diversifier les revenus", "Une dépendance à un seul flux de revenus augmente le risque. Ajoutez 1 à 2 streams complémentaires."),
+            "optimize_expense": ("Optimiser '{name}'", "Cette ligne représente plus de 40% de vos charges. Identifier des leviers de réduction."),
+            "scale_up": ("Préparer le passage à l'échelle", "Indicateurs sains. Définir un plan d'investissement 12 mois pour accélérer la croissance."),
+        },
+        "activity": {
+            "activity_analysis_generated": "Analyse mensuelle générée",
+            "activity_risk_evaluated": "Risque évalué: {level}",
+            "activity_recommendations": "{count} recommandation(s) disponibles",
+        },
+    },
+    "en": {
+        "title": "Bank-Ready Financial Report",
+        "business": "Business", "type": "Type", "country": "Country", "currency": "Currency",
+        "generated": "Generated",
+        "exec_summary": "Executive Summary",
+        "indicator": "Indicator", "value": "Value",
+        "rev_m": "Monthly Revenue", "exp_m": "Monthly Expenses", "profit_m": "Monthly Profit",
+        "margin": "Gross Margin", "burn": "Burn Rate (monthly)",
+        "runway": "Runway", "months": "months", "profitable": "Profitable",
+        "risk": "Risk Level",
+        "recos": "Recommendations",
+        "forecast_title": "12-Month Forecast (Realistic Scenario)",
+        "month": "Month", "rev": "Revenue", "exp": "Expenses", "profit": "Profit", "cash": "Cash",
+        "lender_notes": "Notes for the Lender",
+        "rec": {
+            "improve_margin": ("Improve gross margin", "Renegotiate supplier contracts and target a gross margin > 25%, the standard expected by most Algerian banks."),
+            "secure_financing": ("Secure financing", "Prepare a credit file (forecast P&L + balance sheet) — current runway: {runway} months."),
+            "diversify_revenue": ("Diversify revenue", "Reliance on a single revenue stream increases risk. Add 1–2 complementary streams."),
+            "optimize_expense": ("Optimize '{name}'", "This line represents over 40% of your expenses. Identify reduction levers."),
+            "scale_up": ("Prepare to scale", "Healthy indicators. Define a 12-month investment plan to accelerate growth."),
+        },
+        "activity": {
+            "activity_analysis_generated": "Monthly analysis generated",
+            "activity_risk_evaluated": "Risk evaluated: {level}",
+            "activity_recommendations": "{count} recommendation(s) available",
+        },
+    },
+    "ar": {
+        "title": "تقرير مالي جاهز للبنك",
+        "business": "الشركة", "type": "النوع", "country": "البلد", "currency": "العملة",
+        "generated": "أُنشئ في",
+        "exec_summary": "الملخص التنفيذي",
+        "indicator": "المؤشر", "value": "القيمة",
+        "rev_m": "الإيراد الشهري", "exp_m": "المصروفات الشهرية", "profit_m": "الربح الشهري",
+        "margin": "الهامش الإجمالي", "burn": "معدل الإنفاق (شهري)",
+        "runway": "المدة المالية", "months": "أشهر", "profitable": "مربح",
+        "risk": "مستوى المخاطر",
+        "recos": "التوصيات",
+        "forecast_title": "توقعات 12 شهر (السيناريو الواقعي)",
+        "month": "الشهر", "rev": "الإيراد", "exp": "المصروفات", "profit": "الربح", "cash": "السيولة",
+        "lender_notes": "ملاحظات للمقرض",
+        "rec": {
+            "improve_margin": ("تحسين الهامش الإجمالي", "أعد التفاوض على عقود الموردين واستهدف هامشًا إجماليًا > 25%، وهو المعيار المطلوب من معظم البنوك الجزائرية."),
+            "secure_financing": ("تأمين التمويل", "حضّر ملف ائتمان (حساب استغلال تقديري + ميزانية) — المدة المالية الحالية: {runway} أشهر."),
+            "diversify_revenue": ("تنويع الإيرادات", "الاعتماد على مصدر إيراد واحد يزيد المخاطر. أضف 1 إلى 2 من المصادر التكميلية."),
+            "optimize_expense": ("تحسين '{name}'", "يمثل هذا البند أكثر من 40% من مصروفاتك. حدد روافع التخفيض."),
+            "scale_up": ("الاستعداد للتوسع", "مؤشرات صحية. ضع خطة استثمار 12 شهرًا لتسريع النمو."),
+        },
+        "activity": {
+            "activity_analysis_generated": "تم إنشاء التحليل الشهري",
+            "activity_risk_evaluated": "تم تقييم المخاطر: {level}",
+            "activity_recommendations": "{count} توصية متاحة",
+        },
+    },
+}
+
+# Algerian bank profiles (color, full name, FR/EN/AR labels, cover note)
+BANKS = {
+    "generic": {
+        "name": "AYMAFIN",
+        "full_name_fr": "Rapport générique", "full_name_en": "Generic Report", "full_name_ar": "تقرير عام",
+        "color": "#2563eb", "accent": "#22c55e",
+        "tagline_fr": "Rapport prêt pour dépôt bancaire (toutes banques)",
+        "tagline_en": "Bank-ready financial report (any bank)",
+        "tagline_ar": "تقرير مالي جاهز لأي بنك",
+    },
+    "bna": {
+        "name": "BNA",
+        "full_name_fr": "Banque Nationale d'Algérie", "full_name_en": "National Bank of Algeria", "full_name_ar": "البنك الوطني الجزائري",
+        "color": "#0e7c3a", "accent": "#fbbf24",
+        "tagline_fr": "Dossier de crédit conforme aux exigences BNA — Direction des Crédits PME",
+        "tagline_en": "Credit file aligned with BNA SME credit-desk requirements",
+        "tagline_ar": "ملف ائتمان متوافق مع متطلبات BNA لقطاع المؤسسات الصغيرة والمتوسطة",
+    },
+    "bea": {
+        "name": "BEA",
+        "full_name_fr": "Banque Extérieure d'Algérie", "full_name_en": "External Bank of Algeria", "full_name_ar": "بنك الجزائر الخارجي",
+        "color": "#1e3a8a", "accent": "#ef4444",
+        "tagline_fr": "Dossier de crédit conforme à la grille d'analyse BEA — Direction du Financement",
+        "tagline_en": "Credit file aligned with BEA analysis grid — Financing Department",
+        "tagline_ar": "ملف ائتمان متوافق مع شبكة تحليل BEA — قسم التمويل",
+    },
+    "cpa": {
+        "name": "CPA",
+        "full_name_fr": "Crédit Populaire d'Algérie", "full_name_en": "Popular Credit of Algeria", "full_name_ar": "القرض الشعبي الجزائري",
+        "color": "#7c2d12", "accent": "#f59e0b",
+        "tagline_fr": "Dossier conforme aux exigences CPA pour le financement des PME",
+        "tagline_en": "File aligned with CPA SME financing requirements",
+        "tagline_ar": "ملف متوافق مع متطلبات CPA لتمويل المؤسسات الصغيرة والمتوسطة",
+    },
+    "badr": {
+        "name": "BADR",
+        "full_name_fr": "Banque de l'Agriculture et du Développement Rural", "full_name_en": "Agriculture and Rural Development Bank", "full_name_ar": "بنك الفلاحة والتنمية الريفية",
+        "color": "#15803d", "accent": "#84cc16",
+        "tagline_fr": "Dossier orienté Agriculture & Développement Rural — éligibilité BADR",
+        "tagline_en": "Agriculture & Rural Development-oriented file — BADR eligibility",
+        "tagline_ar": "ملف موجه نحو الفلاحة والتنمية الريفية — أهلية BADR",
+    },
+}
+
+
+def _build_pdf(biz: dict, analysis: dict, forecasts: dict, lang: str = "en", bank_code: str = "generic") -> bytes:
+    L = PDF_I18N.get(lang, PDF_I18N["en"])
+    B = BANKS.get(bank_code, BANKS["generic"])
+    bank_color = colors.HexColor(B["color"])
+    bank_accent = colors.HexColor(B["accent"])
+    bank_full = B.get(f"full_name_{lang}", B["full_name_en"])
+    bank_tagline = B.get(f"tagline_{lang}", B["tagline_en"])
+
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=2*cm, rightMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle("title", parent=styles["Title"], fontSize=22, textColor=colors.HexColor("#0a0a0b"), spaceAfter=10)
+    title_style = ParagraphStyle("title", parent=styles["Title"], fontSize=22, textColor=colors.HexColor("#0a0a0b"), spaceAfter=6)
     sub_style = ParagraphStyle("sub", parent=styles["Normal"], fontSize=10, textColor=colors.HexColor("#52525b"))
-    h2 = ParagraphStyle("h2", parent=styles["Heading2"], textColor=colors.HexColor("#2563eb"), spaceBefore=14, spaceAfter=8)
+    h2 = ParagraphStyle("h2", parent=styles["Heading2"], textColor=bank_color, spaceBefore=14, spaceAfter=8)
     body = ParagraphStyle("body", parent=styles["Normal"], fontSize=10, leading=14, textColor=colors.HexColor("#18181b"))
+    bank_band = ParagraphStyle("band", parent=styles["Normal"], fontSize=11, textColor=colors.white, alignment=1)
 
     story = []
-    story.append(Paragraph(f"AYMAFIN — Bank-Ready Financial Report", title_style))
-    story.append(Paragraph(f"Business: <b>{biz.get('business_name','—')}</b> · Type: {biz.get('business_type','—')} · Country: {biz.get('country','Algeria')} · Currency: {biz.get('currency','DZD')}", sub_style))
-    story.append(Paragraph(f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}", sub_style))
+    # Bank-coloured header band
+    band_table = Table([[Paragraph(f"<b>{B['name']}</b>  ·  {bank_full}", bank_band)]], colWidths=[17*cm])
+    band_table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,-1), bank_color),
+        ("TOPPADDING", (0,0), (-1,-1), 10),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 10),
+    ]))
+    story.append(band_table)
     story.append(Spacer(1, 0.4*cm))
 
-    story.append(Paragraph("Executive Summary", h2))
+    story.append(Paragraph(f"AYMAFIN — {L['title']}", title_style))
+    story.append(Paragraph(f"<i>{bank_tagline}</i>", ParagraphStyle("tag", parent=sub_style, textColor=bank_accent, fontSize=9)))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Paragraph(
+        f"{L['business']}: <b>{biz.get('business_name','—')}</b> · {L['type']}: {biz.get('business_type','—')} · "
+        f"{L['country']}: {biz.get('country','Algeria')} · {L['currency']}: {biz.get('currency','DZD')}", sub_style))
+    story.append(Paragraph(f"{L['generated']}: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}", sub_style))
+    story.append(Spacer(1, 0.4*cm))
+
+    story.append(Paragraph(L["exec_summary"], h2))
     cur = analysis["currency"]
+    runway_str = (f"{analysis['runway_months']} {L['months']}"
+                  if analysis["runway_months"] is not None else L["profitable"])
     summary_data = [
-        ["Indicator", "Value"],
-        ["Monthly Revenue", f"{analysis['revenue_monthly']:,.0f} {cur}"],
-        ["Monthly Expenses", f"{analysis['expenses_monthly']:,.0f} {cur}"],
-        ["Monthly Profit", f"{analysis['profit_monthly']:,.0f} {cur}"],
-        ["Gross Margin", f"{analysis['margin_pct']:.1f} %"],
-        ["Burn Rate (monthly)", f"{analysis['burn_rate_monthly']:,.0f} {cur}"],
-        ["Runway", f"{analysis['runway_months']} months" if analysis["runway_months"] is not None else "Profitable"],
-        ["Risk Level", analysis["risk_level"].upper()],
+        [L["indicator"], L["value"]],
+        [L["rev_m"], f"{analysis['revenue_monthly']:,.0f} {cur}"],
+        [L["exp_m"], f"{analysis['expenses_monthly']:,.0f} {cur}"],
+        [L["profit_m"], f"{analysis['profit_monthly']:,.0f} {cur}"],
+        [L["margin"], f"{analysis['margin_pct']:.1f} %"],
+        [L["burn"], f"{analysis['burn_rate_monthly']:,.0f} {cur}"],
+        [L["runway"], runway_str],
+        [L["risk"], analysis["risk_level"].upper()],
     ]
     t = Table(summary_data, colWidths=[7*cm, 8*cm])
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#2563eb")),
+        ("BACKGROUND", (0,0), (-1,0), bank_color),
         ("TEXTCOLOR", (0,0), (-1,0), colors.white),
         ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
         ("GRID", (0,0), (-1,-1), 0.4, colors.HexColor("#e4e4e7")),
         ("ALIGN", (1,1), (1,-1), "RIGHT"),
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
         ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f4f4f5")]),
         ("FONTSIZE", (0,0), (-1,-1), 10),
         ("LEFTPADDING", (0,0), (-1,-1), 8),
@@ -443,19 +597,25 @@ def _build_pdf(biz: dict, analysis: dict, forecasts: dict) -> bytes:
     ]))
     story.append(t)
 
-    story.append(Paragraph("Recommendations", h2))
+    story.append(Paragraph(L["recos"], h2))
     for r in analysis["recommendations"]:
-        story.append(Paragraph(f"<b>{r['title']}</b> — {r['detail']}", body))
+        title_tpl, detail_tpl = L["rec"].get(r["key"], ("", ""))
+        try:
+            title = title_tpl.format(**(r.get("params") or {}))
+            detail = detail_tpl.format(**(r.get("params") or {}))
+        except Exception:
+            title, detail = title_tpl, detail_tpl
+        story.append(Paragraph(f"<b>{title}</b> — {detail}", body))
         story.append(Spacer(1, 0.15*cm))
 
-    story.append(Paragraph("12-Month Forecast (Realistic Scenario)", h2))
+    story.append(Paragraph(L["forecast_title"], h2))
     scen = forecasts.get("realistic", [])[:12]
-    f_data = [["Month", f"Revenue ({cur})", f"Expenses ({cur})", f"Profit ({cur})", f"Cash ({cur})"]]
+    f_data = [[L["month"], f"{L['rev']} ({cur})", f"{L['exp']} ({cur})", f"{L['profit']} ({cur})", f"{L['cash']} ({cur})"]]
     for row in scen:
         f_data.append([str(row["month"]), f"{row['revenue']:,.0f}", f"{row['expenses']:,.0f}", f"{row['profit']:,.0f}", f"{row['cash']:,.0f}"])
     ft = Table(f_data, colWidths=[1.5*cm, 3.5*cm, 3.5*cm, 3.5*cm, 3.5*cm])
     ft.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#22c55e")),
+        ("BACKGROUND", (0,0), (-1,0), bank_accent),
         ("TEXTCOLOR", (0,0), (-1,0), colors.white),
         ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
         ("GRID", (0,0), (-1,-1), 0.4, colors.HexColor("#e4e4e7")),
@@ -466,20 +626,31 @@ def _build_pdf(biz: dict, analysis: dict, forecasts: dict) -> bytes:
     story.append(ft)
 
     story.append(PageBreak())
-    story.append(Paragraph("Notes for Lenders (Algerian SME context)", h2))
-    story.append(Paragraph(
-        "This report is produced by AYMAFIN's automated decision engine to support credit applications "
-        "with Algerian banks (BNA, BEA, CPA, BADR). The methodology combines monthly revenue/expense "
-        "self-declaration with stress-tested forecasts across optimistic, realistic and pessimistic scenarios. "
-        "Figures should be cross-referenced with audited financial statements before final underwriting.",
-        body
-    ))
+    story.append(Paragraph(L["lender_notes"], h2))
+    notes = {
+        "fr": f"Ce rapport est produit par le moteur de décision automatisé d'AYMAFIN à l'attention de {bank_full} ({B['name']}). "
+              f"La méthodologie combine les déclarations mensuelles de revenus/charges avec des prévisions stress-testées sur 3 scénarios. "
+              f"Les chiffres doivent être recoupés avec les états financiers audités avant la décision finale.",
+        "en": f"This report is produced by AYMAFIN's automated decision engine for {bank_full} ({B['name']}). "
+              f"The methodology combines monthly revenue/expense self-declarations with stress-tested forecasts across 3 scenarios. "
+              f"Figures should be cross-referenced with audited financial statements before final underwriting.",
+        "ar": f"يُنتج هذا التقرير بواسطة محرك القرارات الآلي لـ AYMAFIN لصالح {bank_full} ({B['name']}). "
+              f"تجمع المنهجية بين التصريحات الشهرية بالإيرادات والمصروفات وتوقعات اختُبرت ضد الضغط عبر 3 سيناريوهات. "
+              f"يجب التحقق من الأرقام مقابل البيانات المالية المراجعة قبل اتخاذ القرار النهائي.",
+    }.get(lang, "")
+    story.append(Paragraph(notes, body))
     doc.build(story)
     return buf.getvalue()
 
 
+@api_router.get("/banks")
+async def list_banks():
+    """List supported bank templates for PDF generation."""
+    return [{"code": k, "name": v["name"], "full_name_fr": v["full_name_fr"], "full_name_en": v["full_name_en"], "full_name_ar": v["full_name_ar"], "color": v["color"]} for k, v in BANKS.items()]
+
+
 @api_router.get("/reports/{report_id}/pdf")
-async def download_report(report_id: str, user: dict = Depends(get_current_user)):
+async def download_report(report_id: str, bank: str = "generic", lang: str = "en", user: dict = Depends(get_current_user)):
     rep = await db.reports.find_one({"id": report_id, "user_id": user["id"]}, {"_id": 0})
     if not rep:
         raise HTTPException(status_code=404, detail="Report not found")
@@ -488,12 +659,91 @@ async def download_report(report_id: str, user: dict = Depends(get_current_user)
         raise HTTPException(status_code=404, detail="No business")
     analysis = rep.get("snapshot") or compute_analysis(biz)
     forecasts = compute_forecasts(biz, 12)
-    pdf_bytes = _build_pdf(biz, analysis, forecasts)
+    bank_code = bank if bank in BANKS else "generic"
+    lang_code = lang if lang in PDF_I18N else "en"
+    pdf_bytes = _build_pdf(biz, analysis, forecasts, lang=lang_code, bank_code=bank_code)
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="aymafin-report-{report_id}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="aymafin-{bank_code}-{report_id}.pdf"'},
     )
+
+
+# ---------- Admin ----------
+async def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+@api_router.get("/admin/stats")
+async def admin_stats(_: dict = Depends(require_admin)):
+    total_users = await db.users.count_documents({})
+    onboarded = await db.users.count_documents({"onboarded": True})
+    total_businesses = await db.businesses.count_documents({})
+    total_reports = await db.reports.count_documents({})
+    total_chats = await db.chat_history.count_documents({})
+    # Last 7 days new users
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    new_7d = await db.users.count_documents({"created_at": {"$gte": cutoff}})
+    return {
+        "total_users": total_users,
+        "onboarded_users": onboarded,
+        "total_businesses": total_businesses,
+        "total_reports": total_reports,
+        "total_chats": total_chats,
+        "new_users_7d": new_7d,
+    }
+
+
+@api_router.get("/admin/users")
+async def admin_list_users(_: dict = Depends(require_admin)):
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(1000)
+    user_ids = [u["id"] for u in users]
+    bizs = await db.businesses.find({"user_id": {"$in": user_ids}}, {"_id": 0}).to_list(1000)
+    biz_by_user = {b["user_id"]: b for b in bizs}
+    out = []
+    for u in users:
+        b = biz_by_user.get(u["id"])
+        reports_count = await db.reports.count_documents({"user_id": u["id"]})
+        chats_count = await db.chat_history.count_documents({"user_id": u["id"]})
+        revenue = sum(float(r.get("monthly_amount", 0)) for r in (b.get("revenue_streams", []) if b else []))
+        expenses = sum(float(e.get("monthly_amount", 0)) for e in (b.get("expenses", []) if b else []))
+        out.append({
+            "id": u["id"],
+            "email": u["email"],
+            "name": u.get("name"),
+            "role": u.get("role", "user"),
+            "onboarded": u.get("onboarded", False),
+            "created_at": u.get("created_at"),
+            "business": {
+                "name": b.get("business_name") if b else None,
+                "type": b.get("business_type") if b else None,
+                "country": b.get("country") if b else None,
+                "currency": b.get("currency", "DZD") if b else None,
+                "revenue_monthly": round(revenue, 2),
+                "expenses_monthly": round(expenses, 2),
+                "profit_monthly": round(revenue - expenses, 2),
+                "capital": float(b.get("initial_capital", 0)) if b else 0,
+            } if b else None,
+            "reports_count": reports_count,
+            "chats_count": chats_count,
+        })
+    return out
+
+
+@api_router.delete("/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, admin: dict = Depends(require_admin)):
+    if user_id == admin["id"]:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.users.delete_one({"id": user_id})
+    await db.businesses.delete_many({"user_id": user_id})
+    await db.reports.delete_many({"user_id": user_id})
+    await db.chat_history.delete_many({"user_id": user_id})
+    return {"ok": True, "deleted_user": user_id}
 
 
 # ---------- Chat (mock intelligent) ----------
@@ -568,7 +818,9 @@ async def startup():
         })
         logger.info(f"Seeded admin user: {admin_email}")
     elif not verify_password(admin_password, existing["password_hash"]):
-        await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
+        await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password), "role": "admin"}})
+    elif existing.get("role") != "admin":
+        await db.users.update_one({"email": admin_email}, {"$set": {"role": "admin"}})
 
 
 @app.on_event("shutdown")
