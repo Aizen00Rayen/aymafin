@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import {
   ShieldCheck, LineChart, FileBarChart2, Bot, Languages, Rocket,
-  ArrowRight, Sparkles, CheckCircle2,
+  ArrowRight, Sparkles, CheckCircle2, MapPin, Mail, Phone,
 } from "lucide-react";
 import Navbar from "../components/Navbar";
 
@@ -167,10 +167,41 @@ export default function Landing() {
         </div>
       </section>
 
-      <footer className="border-t border-white/5 py-10">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-wrap items-center justify-between gap-4 text-sm text-zinc-500">
-          <div>© 2026 AYMAFIN. {t("hookLine")}.</div>
-          <div className="font-mono text-xs uppercase tracking-[0.2em]">Algiers · Paris · Dubai</div>
+      <footer className="border-t border-white/5 py-12" data-testid="landing-footer">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 grid gap-8 md:grid-cols-3 md:items-start">
+          <div>
+            <div className="flex items-center gap-2.5 mb-3">
+              <img src="https://customer-assets.emergentagent.com/job_b01d42a3-f1ae-4d66-b970-d5ac0810ddbf/artifacts/2vbg1kvr_logo.png"
+                   alt="" className="size-8 rounded-lg" />
+              <span className="font-display font-black text-base tracking-tight">AYMAFIN</span>
+            </div>
+            <p className="text-sm text-zinc-500 max-w-xs">{t("hookLine")}.</p>
+          </div>
+
+          <div>
+            <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-zinc-500 mb-3">Contact</div>
+            <ul className="space-y-2.5 text-sm">
+              <li className="flex items-center gap-2.5 text-zinc-300">
+                <MapPin className="size-4 text-blue-400 shrink-0" />
+                <span data-testid="footer-location">Tlemcen, Algeria</span>
+              </li>
+              <li className="flex items-center gap-2.5 text-zinc-300">
+                <Mail className="size-4 text-green-400 shrink-0" />
+                <a href="mailto:aymafin-dz@gmail.com" className="hover:text-white transition font-mono text-xs"
+                   data-testid="footer-email">aymafin-dz@gmail.com</a>
+              </li>
+              <li className="flex items-center gap-2.5 text-zinc-300">
+                <Phone className="size-4 text-blue-400 shrink-0" />
+                <a href="tel:+213557682044" className="hover:text-white transition font-mono text-xs" dir="ltr"
+                   data-testid="footer-phone">+213 557 68 20 44</a>
+              </li>
+            </ul>
+          </div>
+
+          <div className="md:text-end">
+            <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-zinc-500 mb-3">© 2026 AYMAFIN</div>
+            <div className="text-xs text-zinc-600">All rights reserved.</div>
+          </div>
         </div>
       </footer>
     </div>
