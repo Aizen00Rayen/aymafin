@@ -22,18 +22,20 @@ Build AYMAFIN — an AI-powered financial decision engine SaaS for Algerian SMEs
 6. Mock-intelligent AI chat (deterministic, context-aware)
 7. Multi-language FR (default) / EN / AR + RTL
 
-## What's Implemented (2026-04-29)
+## What's Implemented (2026-04-29 — iteration 2)
 - ✅ Backend: FastAPI server with JWT cookie auth, bcrypt, brute-force lockout (email-keyed), admin seed
 - ✅ Onboarding endpoint (POST/GET /api/business)
-- ✅ Decision engine (/api/analysis) — revenue, profit, margin, burn, runway, risk score, FR-localized recommendations
+- ✅ Decision engine (/api/analysis) — recommendations as `{key, params}` for FE/PDF i18n; activity log also keyed
 - ✅ Forecasts (/api/forecasts) — 3 scenarios, 12 months, cash projection
-- ✅ Reports (/api/reports + /pdf) — real ReportLab investor-style PDF
+- ✅ Reports — real ReportLab PDF, **bank-specific templates** (generic / BNA / BEA / CPA / BADR) with bank-coloured headers, full names FR/EN/AR, lender-notes localised
+- ✅ Bank list endpoint /api/banks
+- ✅ **Admin endpoints** /api/admin/stats, /api/admin/users (list with business+counts), DELETE /api/admin/users/{id} (cascades)
 - ✅ Chat (/api/chat + /history) — mock intelligent replies
-- ✅ Frontend: Landing, Auth, Onboarding (4-step), Dashboard (KPIs + charts + reco + activity), Forecasting (scenario toggle), Reports, Chat, Settings
-- ✅ i18n FR/EN/AR with RTL via `dir` attribute and Tailwind logical properties (ms/me/ps/pe/start/end)
-- ✅ Animated hero (logo + glow rings + particles + scan line via framer-motion)
-- ✅ data-testid coverage on all interactive elements
-- ✅ Tested via testing_agent_v3: 17/18 backend tests + 100% frontend flow → after fix: brute-force confirmed via curl
+- ✅ Frontend: Landing, Auth, Onboarding (4-step), Dashboard, Forecasting, Reports (with bank selector), Chat, Settings, **Admin dashboard** (stats grid + users table + delete)
+- ✅ Admin sidebar entry visible only to admins; admin login redirects to /admin
+- ✅ i18n FR/EN/AR with full RTL — recommendations + activity log + bank labels translated
+- ✅ Animated hero (logo + glow rings + particles) via framer-motion
+- ✅ Tested: **30/30 backend tests + 100% frontend flows** (testing_agent_v3 iteration_2)
 
 ## Test Credentials
 See `/app/memory/test_credentials.md`.
