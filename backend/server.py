@@ -175,7 +175,9 @@ async def register(body: RegisterIn, response: Response):
 async def login(body: LoginIn, request: Request, response: Response):
     email = body.email.lower().strip()
     ip = request.client.host if request.client else "unknown"
-    identifier = f"{ip}:{email}"
+    # Behind K8s ingress, request.client.host is unreliable. Key the lockout
+    # primarily on email so attempts always aggregate.
+    identifier = email
 
     # Brute force lockout
     rec = await db.login_attempts.find_one({"identifier": identifier})

@@ -340,10 +340,11 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
+    lng: localStorage.getItem("i18nextLng") || "fr",
     fallbackLng: "fr",
     supportedLngs: ["fr", "en", "ar"],
     interpolation: { escapeValue: false },
-    detection: { order: ["localStorage", "navigator"], caches: ["localStorage"] },
+    detection: { order: ["localStorage"], caches: ["localStorage"] },
   });
 
 const applyDir = (lng) => {
