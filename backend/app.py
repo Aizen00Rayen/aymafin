@@ -14,6 +14,7 @@ from routers import business as business_router
 from routers import reports as reports_router
 from routers import chat as chat_router
 from routers import admin as admin_router
+from routers import billing as billing_router
 
 logger = logging.getLogger("aymafin")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -68,6 +69,7 @@ api_router.include_router(business_router.router)
 api_router.include_router(reports_router.router)
 api_router.include_router(chat_router.router)
 api_router.include_router(admin_router.router)
+api_router.include_router(billing_router.router)
 
 
 @api_router.get("/")
