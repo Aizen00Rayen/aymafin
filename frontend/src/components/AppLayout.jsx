@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../contexts/AuthContext";
 import {
   LayoutDashboard, TrendingUp, FileText, MessageSquareText, Settings, LogOut, Shield,
+  BookOpen, Wallet, BarChart3, Brain,
 } from "lucide-react";
 import Navbar from "./Navbar";
 
@@ -16,6 +17,10 @@ export default function AppLayout({ children }) {
 
   const items = [
     { to: "/dashboard", label: t("nav.dashboard"), icon: LayoutDashboard, tid: "side-dashboard" },
+    { to: "/data-entry", label: "Saisie des données", icon: BookOpen, tid: "side-data-entry" },
+    { to: "/treasury", label: "Trésorerie", icon: Wallet, tid: "side-treasury" },
+    { to: "/financial-statements", label: "États financiers", icon: BarChart3, tid: "side-financial" },
+    { to: "/ai-analysis", label: "Analyse IA", icon: Brain, tid: "side-ai" },
     { to: "/forecasting", label: t("nav.forecasting"), icon: TrendingUp, tid: "side-forecasting" },
     { to: "/reports", label: t("nav.reports"), icon: FileText, tid: "side-reports" },
     { to: "/chat", label: t("nav.chat"), icon: MessageSquareText, tid: "side-chat" },

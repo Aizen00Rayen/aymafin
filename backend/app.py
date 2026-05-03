@@ -15,6 +15,9 @@ from routers import reports as reports_router
 from routers import chat as chat_router
 from routers import admin as admin_router
 from routers import billing as billing_router
+from routers import accounting as accounting_router
+from routers import treasury as treasury_router
+from routers import ai_analysis as ai_analysis_router
 
 logger = logging.getLogger("aymafin")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -55,6 +58,11 @@ async def lifespan(_: FastAPI):
     await db.businesses.create_index("user_id")
     await db.reports.create_index([("user_id", 1), ("created_at", -1)])
     await db.login_attempts.create_index("identifier")
+    await db.accounting_entries.create_index([("user_id", 1), ("period", 1), ("account_code", 1)])
+    await db.bilan_entries.create_index([("user_id", 1), ("period", 1)], unique=True)
+    await db.journal_entries.create_index([("user_id", 1), ("date", 1)])
+    await db.treasury_entries.create_index([("user_id", 1), ("date", 1)])
+    await db.invoices.create_index([("user_id", 1), ("date", -1)])
     await seed_admin()
     yield
     # Shutdown
@@ -70,6 +78,9 @@ api_router.include_router(reports_router.router)
 api_router.include_router(chat_router.router)
 api_router.include_router(admin_router.router)
 api_router.include_router(billing_router.router)
+api_router.include_router(accounting_router.router)
+api_router.include_router(treasury_router.router)
+api_router.include_router(ai_analysis_router.router)
 
 
 @api_router.get("/")

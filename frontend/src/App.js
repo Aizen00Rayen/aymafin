@@ -13,6 +13,10 @@ import Reports from "@/pages/Reports";
 import Chat from "@/pages/Chat";
 import Settings from "@/pages/Settings";
 import Admin from "@/pages/Admin";
+import DataEntry from "@/pages/DataEntry";
+import Treasury from "@/pages/Treasury";
+import FinancialStatements from "@/pages/FinancialStatements";
+import AIAnalysis from "@/pages/AIAnalysis";
 import { Toaster } from "sonner";
 
 export default function App() {
@@ -44,6 +48,18 @@ export default function App() {
           } />
           <Route path="/admin" element={
             <ProtectedRoute requireOnboarding={false}><Admin /></ProtectedRoute>
+          } />
+          <Route path="/data-entry" element={
+            <ProtectedRoute><DataEntry /></ProtectedRoute>
+          } />
+          <Route path="/treasury" element={
+            <ProtectedRoute><Treasury /></ProtectedRoute>
+          } />
+          <Route path="/financial-statements" element={
+            <ProtectedRoute><FinancialStatements /></ProtectedRoute>
+          } />
+          <Route path="/ai-analysis" element={
+            <ProtectedRoute><AIAnalysis /></ProtectedRoute>
           } />
         </Routes>
         <Toaster position="top-right" theme="dark" richColors />
