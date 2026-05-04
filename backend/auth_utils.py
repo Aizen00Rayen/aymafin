@@ -30,9 +30,12 @@ def create_access_token(user_id: str, email: str) -> str:
 def set_auth_cookie(response: Response, token: str):
     response.set_cookie(
         key="access_token", value=token,
-        httponly=True, secure=False, samesite="lax",
+        httponly=True, secure=True, samesite="none",
         max_age=ACCESS_TTL_MIN * 60, path="/",
     )
+    # Also expose token in header so mobile WebView can persist it in localStorage
+    response.headers["X-Access-Token"] = token
+    response.headers["Access-Control-Expose-Headers"] = "X-Access-Token, X-Bank-Used, X-Lang-Used"
 
 
 def clear_auth_cookie(response: Response):

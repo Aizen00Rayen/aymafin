@@ -77,11 +77,20 @@ async def root():
 
 
 app.include_router(api_router)
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "null",           # Android WebView file:// sends Origin: null
+    "file://",
+]
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Bank-Used", "X-Lang-Used"],
+    expose_headers=["X-Bank-Used", "X-Lang-Used", "X-Access-Token"],
 )

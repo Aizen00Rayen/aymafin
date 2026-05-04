@@ -1,6 +1,6 @@
 import axios from "axios";
 
-// Runtime backend URL: env var (web build) → localStorage override (mobile) → fallback
+// Runtime backend URL: env var (web build) → localStorage override (mobile)
 function getBackendUrl() {
   const env = process.env.REACT_APP_BACKEND_URL;
   if (env) return env.replace(/\/$/, "");
@@ -13,7 +13,6 @@ function getBackendUrl() {
 
 export function setBackendUrl(url) {
   try { localStorage.setItem("aymafin_backend_url", url.replace(/\/$/, "")); } catch {}
-  // Reload so axios instance picks up new base URL
   window.location.reload();
 }
 
@@ -21,11 +20,36 @@ export function getStoredBackendUrl() {
   try { return localStorage.getItem("aymafin_backend_url") || ""; } catch { return ""; }
 }
 
+// Token storage — used when cookies can't be sent cross-origin from file://
+export function saveToken(token) {
+  try { localStorage.setItem("aymafin_token", token); } catch {}
+}
+export function clearToken() {
+  try { localStorage.removeItem("aymafin_token"); } catch {}
+}
+function getToken() {
+  try { return localStorage.getItem("aymafin_token") || ""; } catch { return ""; }
+}
+
 export const API = `${getBackendUrl()}/api`;
 
 const api = axios.create({
   baseURL: API,
   withCredentials: true,
+});
+
+// Attach Bearer token on every request (fallback for WebView / file:// origin)
+api.interceptors.request.use((config) => {
+  const token = getToken();
+  if (token) config.headers["Authorization"] = `Bearer ${token}`;
+  return config;
+});
+
+// If a response sets a token header, persist it
+api.interceptors.response.use((response) => {
+  const token = response.headers["x-access-token"];
+  if (token) saveToken(token);
+  return response;
 });
 
 export default api;
