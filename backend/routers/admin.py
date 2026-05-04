@@ -98,10 +98,9 @@ async def admin_delete_user(user_id: str, admin: dict = Depends(require_admin)):
     if target_res.data.get("deleted_at"):
         raise HTTPException(status_code=400, detail="User already deleted")
     now = datetime.now(timezone.utc).isoformat()
-    audit = {"deleted_at": now, "deleted_by": admin["id"]}
-    await db.table("users").update(audit).eq("id", user_id).execute()
-    await db.table("businesses").update(audit).eq("user_id", user_id).execute()
-    await db.table("reports").update(audit).eq("user_id", user_id).execute()
+    await db.table("users").update({"deleted_at": now}).eq("id", user_id).execute()
+    await db.table("businesses").update({"deleted_at": now}).eq("user_id", user_id).execute()
+    await db.table("reports").update({"deleted_at": now}).eq("user_id", user_id).execute()
     return {"ok": True, "user_id": user_id, "soft_deleted_at": now}
 
 
@@ -113,8 +112,7 @@ async def admin_restore_user(user_id: str, _: dict = Depends(require_admin)):
         raise HTTPException(status_code=404, detail="User not found")
     if not target_res.data.get("deleted_at"):
         raise HTTPException(status_code=400, detail="User is not deleted")
-    restore = {"deleted_at": None, "deleted_by": None}
-    await db.table("users").update(restore).eq("id", user_id).execute()
-    await db.table("businesses").update(restore).eq("user_id", user_id).execute()
-    await db.table("reports").update(restore).eq("user_id", user_id).execute()
+    await db.table("users").update({"deleted_at": None}).eq("id", user_id).execute()
+    await db.table("businesses").update({"deleted_at": None}).eq("user_id", user_id).execute()
+    await db.table("reports").update({"deleted_at": None}).eq("user_id", user_id).execute()
     return {"ok": True, "user_id": user_id, "restored": True}

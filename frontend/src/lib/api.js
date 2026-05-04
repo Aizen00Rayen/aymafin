@@ -1,7 +1,27 @@
 import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-export const API = `${BACKEND_URL}/api`;
+// Runtime backend URL: env var (web build) → localStorage override (mobile) → fallback
+function getBackendUrl() {
+  const env = process.env.REACT_APP_BACKEND_URL;
+  if (env) return env.replace(/\/$/, "");
+  try {
+    const stored = localStorage.getItem("aymafin_backend_url");
+    if (stored) return stored.replace(/\/$/, "");
+  } catch {}
+  return "";
+}
+
+export function setBackendUrl(url) {
+  try { localStorage.setItem("aymafin_backend_url", url.replace(/\/$/, "")); } catch {}
+  // Reload so axios instance picks up new base URL
+  window.location.reload();
+}
+
+export function getStoredBackendUrl() {
+  try { return localStorage.getItem("aymafin_backend_url") || ""; } catch { return ""; }
+}
+
+export const API = `${getBackendUrl()}/api`;
 
 const api = axios.create({
   baseURL: API,
