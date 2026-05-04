@@ -5,7 +5,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from config import db
+from config import get_db
 from auth_utils import get_current_user
 from plan_comptable import PLAN_COMPTABLE_CHARGES, PLAN_COMPTABLE_PRODUITS
 
@@ -15,7 +15,7 @@ JOURNAL_TYPES = ["OUVERTURE", "ACHATS", "BANQUE", "CAISSE", "STOCKS", "OPERATION
 
 
 class AccountingEntryIn(BaseModel):
-    period: str  # "2024-01"
+    period: str
     account_code: str
     amount: float
     note: Optional[str] = None
@@ -23,7 +23,6 @@ class AccountingEntryIn(BaseModel):
 
 class BilanEntryIn(BaseModel):
     period: str
-    # Actif non courant
     ecarts_acquisition: float = 0
     immo_incorporelles_brut: float = 0
     immo_incorporelles_amort: float = 0
@@ -31,20 +30,16 @@ class BilanEntryIn(BaseModel):
     immo_corporelles_amort: float = 0
     immo_financieres: float = 0
     impots_differes_actif: float = 0
-    # Actif courant
     stocks: float = 0
     creances_clients: float = 0
     autres_debiteurs: float = 0
     impots_taxes_recuperables: float = 0
     tresorerie_actif: float = 0
-    # Capitaux propres
     capital: float = 0
     reserves: float = 0
     autres_capitaux_propres: float = 0
-    # Passif non courant
     emprunts_lt: float = 0
     impots_differes_passif: float = 0
-    # Passif courant
     fournisseurs: float = 0
     dettes_personnel: float = 0
     dettes_impots: float = 0
@@ -53,7 +48,7 @@ class BilanEntryIn(BaseModel):
 
 
 class JournalEntryIn(BaseModel):
-    date: str  # "2024-01-15"
+    date: str
     journal_type: str
     description: str
     debit_account: str
@@ -69,27 +64,17 @@ def _build_bilan_struct(raw: dict, resultat_net: float) -> dict:
     total_ac = (raw["stocks"] + raw["creances_clients"] + raw["autres_debiteurs"]
                 + raw["impots_taxes_recuperables"] + raw["tresorerie_actif"])
     total_actif = total_anc + total_ac
-
     total_cp = raw["capital"] + raw["reserves"] + resultat_net + raw["autres_capitaux_propres"]
     total_pnc = raw["emprunts_lt"] + raw["impots_differes_passif"]
     total_pc = (raw["fournisseurs"] + raw["dettes_personnel"] + raw["dettes_impots"]
                 + raw["autres_dettes_ct"] + raw["decouvert_bancaire"])
     total_passif = total_cp + total_pnc + total_pc
-
     return {
         "actif": {
             "non_courant": {
                 "ecarts_acquisition": raw["ecarts_acquisition"],
-                "immo_incorporelles": {
-                    "brut": raw["immo_incorporelles_brut"],
-                    "amort": raw["immo_incorporelles_amort"],
-                    "net": immo_inc_net,
-                },
-                "immo_corporelles": {
-                    "brut": raw["immo_corporelles_brut"],
-                    "amort": raw["immo_corporelles_amort"],
-                    "net": immo_corp_net,
-                },
+                "immo_incorporelles": {"brut": raw["immo_incorporelles_brut"], "amort": raw["immo_incorporelles_amort"], "net": immo_inc_net},
+                "immo_corporelles": {"brut": raw["immo_corporelles_brut"], "amort": raw["immo_corporelles_amort"], "net": immo_corp_net},
                 "immo_financieres": raw["immo_financieres"],
                 "impots_differes": raw["impots_differes_actif"],
                 "total": round(total_anc, 2),
@@ -112,11 +97,7 @@ def _build_bilan_struct(raw: dict, resultat_net: float) -> dict:
                 "autres": raw["autres_capitaux_propres"],
                 "total": round(total_cp, 2),
             },
-            "non_courant": {
-                "emprunts_lt": raw["emprunts_lt"],
-                "impots_differes": raw["impots_differes_passif"],
-                "total": round(total_pnc, 2),
-            },
+            "non_courant": {"emprunts_lt": raw["emprunts_lt"], "impots_differes": raw["impots_differes_passif"], "total": round(total_pnc, 2)},
             "courant": {
                 "fournisseurs": raw["fournisseurs"],
                 "dettes_personnel": raw["dettes_personnel"],
@@ -138,30 +119,24 @@ async def get_plan_comptable():
 
 @router.get("/accounting/periods")
 async def list_periods(user: dict = Depends(get_current_user)):
-    pipeline = [
-        {"$match": {"user_id": user["id"]}},
-        {"$group": {"_id": "$period"}},
-        {"$sort": {"_id": -1}},
-    ]
-    results = await db.accounting_entries.aggregate(pipeline).to_list(100)
-    bilan_periods = await db.bilan_entries.distinct("period", {"user_id": user["id"]})
-    periods = sorted(set([r["_id"] for r in results] + bilan_periods), reverse=True)
+    db = await get_db()
+    ae_res = await db.table("accounting_entries").select("period").eq("user_id", user["id"]).execute()
+    be_res = await db.table("bilan_entries").select("period").eq("user_id", user["id"]).execute()
+    periods = sorted(set(
+        [r["period"] for r in (ae_res.data or [])] +
+        [r["period"] for r in (be_res.data or [])]
+    ), reverse=True)
     return periods
 
 
-# ── Accounting entries (charges & produits) ──────────────────────────────────
-
 @router.get("/accounting/entries")
-async def get_entries(
-    period: str,
-    entry_type: Optional[str] = None,
-    user: dict = Depends(get_current_user),
-):
-    query: dict = {"user_id": user["id"], "period": period}
+async def get_entries(period: str, entry_type: Optional[str] = None, user: dict = Depends(get_current_user)):
+    db = await get_db()
+    q = db.table("accounting_entries").select("*").eq("user_id", user["id"]).eq("period", period)
     if entry_type:
-        query["entry_type"] = entry_type
-    entries = await db.accounting_entries.find(query, {"_id": 0}).to_list(1000)
-    return entries
+        q = q.eq("entry_type", entry_type)
+    res = await q.execute()
+    return res.data or []
 
 
 @router.post("/accounting/entries")
@@ -174,48 +149,31 @@ async def upsert_entry(body: AccountingEntryIn, user: dict = Depends(get_current
     else:
         raise HTTPException(400, "Le code compte doit commencer par 6 (charge) ou 7 (produit)")
 
+    db = await get_db()
     now = datetime.now(timezone.utc).isoformat()
-    existing = await db.accounting_entries.find_one(
-        {"user_id": user["id"], "period": body.period, "account_code": body.account_code}
-    )
-    if existing:
-        await db.accounting_entries.update_one(
-            {"id": existing["id"]},
-            {"$set": {"amount": body.amount, "note": body.note, "updated_at": now}},
-        )
-        return {"id": existing["id"], "ok": True}
-
-    doc = {
-        "id": str(uuid.uuid4()),
-        "user_id": user["id"],
-        "period": body.period,
-        "account_code": body.account_code,
-        "entry_type": entry_type,
-        "amount": body.amount,
-        "note": body.note,
-        "created_at": now,
-        "updated_at": now,
-    }
-    await db.accounting_entries.insert_one(doc)
+    existing = await db.table("accounting_entries").select("id").eq("user_id", user["id"]).eq("period", body.period).eq("account_code", body.account_code).maybe_single().execute()
+    if existing.data:
+        await db.table("accounting_entries").update({"amount": body.amount, "note": body.note, "updated_at": now}).eq("id", existing.data["id"]).execute()
+        return {"id": existing.data["id"], "ok": True}
+    doc = {"id": str(uuid.uuid4()), "user_id": user["id"], "period": body.period, "account_code": body.account_code, "entry_type": entry_type, "amount": body.amount, "note": body.note, "created_at": now, "updated_at": now}
+    await db.table("accounting_entries").insert(doc).execute()
     return {"id": doc["id"], "ok": True}
 
 
 @router.delete("/accounting/entries/{entry_id}")
 async def delete_entry(entry_id: str, user: dict = Depends(get_current_user)):
-    res = await db.accounting_entries.delete_one({"id": entry_id, "user_id": user["id"]})
-    if res.deleted_count == 0:
+    db = await get_db()
+    res = await db.table("accounting_entries").delete().eq("id", entry_id).eq("user_id", user["id"]).execute()
+    if not res.data:
         raise HTTPException(404, "Entrée introuvable")
     return {"ok": True}
 
 
-# ── TCR ───────────────────────────────────────────────────────────────────────
-
 @router.get("/accounting/tcr")
 async def get_tcr(period: str, user: dict = Depends(get_current_user)):
-    entries = await db.accounting_entries.find(
-        {"user_id": user["id"], "period": period}, {"_id": 0}
-    ).to_list(1000)
-
+    db = await get_db()
+    res = await db.table("accounting_entries").select("*").eq("user_id", user["id"]).eq("period", period).execute()
+    entries = res.data or []
     charges: dict = {}
     produits: dict = {}
     for e in entries:
@@ -223,20 +181,14 @@ async def get_tcr(period: str, user: dict = Depends(get_current_user)):
             charges[e["account_code"]] = e["amount"]
         else:
             produits[e["account_code"]] = e["amount"]
-
     total_charges = sum(charges.values())
     total_produits = sum(produits.values())
 
-    # Group by class (60, 61, …, 70, 71, …)
     def group_by_class(data: dict, plan: dict) -> List[dict]:
         rows = []
         for cls, info in plan.items():
             subtotal = sum(v for k, v in data.items() if k.startswith(cls))
-            accounts = [
-                {"code": k, "name": info["accounts"][k], "amount": data.get(k, 0)}
-                for k in info["accounts"]
-                if data.get(k, 0) != 0
-            ]
+            accounts = [{"code": k, "name": info["accounts"][k], "amount": data.get(k, 0)} for k in info["accounts"] if data.get(k, 0) != 0]
             rows.append({"class": cls, "name": info["name"], "subtotal": round(subtotal, 2), "accounts": accounts})
         return rows
 
@@ -252,72 +204,67 @@ async def get_tcr(period: str, user: dict = Depends(get_current_user)):
     }
 
 
-# ── Bilan ─────────────────────────────────────────────────────────────────────
-
 @router.get("/accounting/bilan")
 async def get_bilan(period: str, user: dict = Depends(get_current_user)):
-    raw = await db.bilan_entries.find_one({"user_id": user["id"], "period": period}, {"_id": 0})
-    if not raw:
+    db = await get_db()
+    raw_res = await db.table("bilan_entries").select("*").eq("user_id", user["id"]).eq("period", period).maybe_single().execute()
+    if not raw_res.data:
         return None
-
-    entries = await db.accounting_entries.find(
-        {"user_id": user["id"], "period": period}, {"_id": 0}
-    ).to_list(1000)
+    entries_res = await db.table("accounting_entries").select("entry_type,amount").eq("user_id", user["id"]).eq("period", period).execute()
+    entries = entries_res.data or []
     resultat_net = (
         sum(e["amount"] for e in entries if e["entry_type"] == "produit")
         - sum(e["amount"] for e in entries if e["entry_type"] == "charge")
     )
-    return _build_bilan_struct(raw, resultat_net)
+    return _build_bilan_struct(raw_res.data, resultat_net)
 
 
 @router.post("/accounting/bilan")
 async def upsert_bilan(body: BilanEntryIn, user: dict = Depends(get_current_user)):
+    db = await get_db()
     doc = body.model_dump()
     doc["user_id"] = user["id"]
     now = datetime.now(timezone.utc).isoformat()
     doc["updated_at"] = now
-    existing = await db.bilan_entries.find_one({"user_id": user["id"], "period": body.period})
-    if existing:
-        await db.bilan_entries.update_one({"user_id": user["id"], "period": body.period}, {"$set": doc})
+    existing = await db.table("bilan_entries").select("id").eq("user_id", user["id"]).eq("period", body.period).maybe_single().execute()
+    if existing.data:
+        await db.table("bilan_entries").update(doc).eq("user_id", user["id"]).eq("period", body.period).execute()
         return {"ok": True}
     doc["id"] = str(uuid.uuid4())
     doc["created_at"] = now
-    await db.bilan_entries.insert_one(doc)
+    await db.table("bilan_entries").insert(doc).execute()
     return {"id": doc["id"], "ok": True}
 
 
-# ── Journal ───────────────────────────────────────────────────────────────────
-
 @router.get("/accounting/journal")
-async def get_journal(
-    period: Optional[str] = None,
-    journal_type: Optional[str] = None,
-    user: dict = Depends(get_current_user),
-):
-    query: dict = {"user_id": user["id"]}
+async def get_journal(period: Optional[str] = None, journal_type: Optional[str] = None, user: dict = Depends(get_current_user)):
+    db = await get_db()
+    q = db.table("journal_entries").select("*").eq("user_id", user["id"])
     if period:
-        query["date"] = {"$regex": f"^{period}"}
+        q = q.like("date", f"{period}%")
     if journal_type:
-        query["journal_type"] = journal_type
-    entries = await db.journal_entries.find(query, {"_id": 0}).sort("date", 1).to_list(2000)
-    return entries
+        q = q.eq("journal_type", journal_type)
+    res = await q.order("date", desc=False).limit(2000).execute()
+    return res.data or []
 
 
 @router.post("/accounting/journal")
 async def create_journal_entry(body: JournalEntryIn, user: dict = Depends(get_current_user)):
     if body.journal_type not in JOURNAL_TYPES:
-        raise HTTPException(400, f"Type de journal invalide. Valeurs acceptées: {', '.join(JOURNAL_TYPES)}")
+        raise HTTPException(400, f"Type de journal invalide. Valeurs acceptées : {', '.join(JOURNAL_TYPES)}")
+    db = await get_db()
     doc = body.model_dump()
     doc["id"] = str(uuid.uuid4())
     doc["user_id"] = user["id"]
     doc["created_at"] = datetime.now(timezone.utc).isoformat()
-    await db.journal_entries.insert_one(doc)
+    await db.table("journal_entries").insert(doc).execute()
     return {"id": doc["id"], "ok": True}
 
 
 @router.delete("/accounting/journal/{entry_id}")
 async def delete_journal_entry(entry_id: str, user: dict = Depends(get_current_user)):
-    res = await db.journal_entries.delete_one({"id": entry_id, "user_id": user["id"]})
-    if res.deleted_count == 0:
-        raise HTTPException(404, "Écriture de journal introuvable")
+    db = await get_db()
+    res = await db.table("journal_entries").delete().eq("id", entry_id).eq("user_id", user["id"]).execute()
+    if not res.data:
+        raise HTTPException(404, "Écriture introuvable")
     return {"ok": True}

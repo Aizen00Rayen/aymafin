@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from config import db
+from config import get_db
 from auth_utils import get_current_user
 from finance import compute_analysis
 
@@ -17,7 +17,9 @@ class ChatIn(BaseModel):
 
 @router.post("/chat")
 async def chat(body: ChatIn, user: dict = Depends(get_current_user)):
-    biz = await db.businesses.find_one({"user_id": user["id"]}, {"_id": 0})
+    db = await get_db()
+    res = await db.table("businesses").select("*").eq("user_id", user["id"]).maybe_single().execute()
+    biz = res.data
     msg = body.message.lower().strip()
     if not biz:
         reply = "Veuillez compléter l'onboarding pour que je puisse analyser votre activité."
@@ -35,10 +37,10 @@ async def chat(body: ChatIn, user: dict = Depends(get_current_user)):
         elif any(k in msg for k in ["forecast", "prévision", "prevision", "futur"]):
             reply = "J'ai généré 3 scénarios (optimiste +8%/m, réaliste +3%/m, pessimiste -2%/m). Consultez la page Forecasting."
         elif any(k in msg for k in ["banque", "bank", "crédit", "credit", "loan"]):
-            reply = "Pour un dossier bancaire algérien : générez le rapport bank-ready depuis la page Reports. Il contient marge, runway, scénarios et recommandations."
+            reply = "Pour un dossier bancaire algérien : générez le rapport bank-ready depuis la page Reports."
         elif any(k in msg for k in ["recomman", "advice", "conseil"]):
             top = a["recommendations"][0] if a["recommendations"] else None
-            reply = f"Recommandation prioritaire (clé) : {top['key']}." if top else "Indicateurs sains."
+            reply = f"Recommandation prioritaire : {top['key']}." if top else "Indicateurs sains."
         else:
             reply = (
                 f"Voici un résumé : Revenu {a['revenue_monthly']:.0f}, Charges {a['expenses_monthly']:.0f}, "
@@ -51,11 +53,12 @@ async def chat(body: ChatIn, user: dict = Depends(get_current_user)):
         "reply": reply,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    await db.chat_history.insert_one(record)
+    await db.table("chat_history").insert(record).execute()
     return {"reply": reply, "id": record["id"]}
 
 
 @router.get("/chat/history")
 async def chat_history(user: dict = Depends(get_current_user)):
-    items = await db.chat_history.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", 1).to_list(200)
-    return items
+    db = await get_db()
+    res = await db.table("chat_history").select("*").eq("user_id", user["id"]).order("created_at", desc=False).limit(200).execute()
+    return res.data or []

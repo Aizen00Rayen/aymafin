@@ -1,0 +1,5 @@
+#!/bin/sh
+# Gradle start up script for UN*X
+GRADLE_OPTS="${GRADLE_OPTS:-""} -Xdock:name=AYMAFIN -Xdock:icon=$APP_HOME/media/gradle.icns"
+APP_HOME="`pwd -P`"
+exec "$APP_HOME/gradlew" "$@"

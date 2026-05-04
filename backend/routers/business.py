@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from config import db
+from config import get_db
 from auth_utils import get_current_user
 from finance import compute_analysis, compute_forecasts
 
@@ -26,31 +26,37 @@ class BusinessIn(BaseModel):
 
 @router.post("/business")
 async def upsert_business(body: BusinessIn, user: dict = Depends(get_current_user)):
+    db = await get_db()
     doc = body.model_dump()
     doc["user_id"] = user["id"]
     doc["updated_at"] = datetime.now(timezone.utc).isoformat()
-    existing = await db.businesses.find_one({"user_id": user["id"]})
-    if existing:
-        await db.businesses.update_one({"user_id": user["id"]}, {"$set": doc})
-        bid = existing["id"]
+
+    existing = await db.table("businesses").select("id").eq("user_id", user["id"]).maybe_single().execute()
+    if existing.data:
+        await db.table("businesses").update(doc).eq("user_id", user["id"]).execute()
+        bid = existing.data["id"]
     else:
         bid = str(uuid.uuid4())
         doc["id"] = bid
         doc["created_at"] = doc["updated_at"]
-        await db.businesses.insert_one(doc)
-    await db.users.update_one({"id": user["id"]}, {"$set": {"onboarded": True}})
+        await db.table("businesses").insert(doc).execute()
+
+    await db.table("users").update({"onboarded": True}).eq("id", user["id"]).execute()
     return {"id": bid, "ok": True}
 
 
 @router.get("/business")
 async def get_business(user: dict = Depends(get_current_user)):
-    biz = await db.businesses.find_one({"user_id": user["id"]}, {"_id": 0})
-    return biz
+    db = await get_db()
+    res = await db.table("businesses").select("*").eq("user_id", user["id"]).maybe_single().execute()
+    return res.data
 
 
 @router.get("/analysis")
 async def get_analysis(user: dict = Depends(get_current_user)):
-    biz = await db.businesses.find_one({"user_id": user["id"]}, {"_id": 0})
+    db = await get_db()
+    res = await db.table("businesses").select("*").eq("user_id", user["id"]).maybe_single().execute()
+    biz = res.data
     if not biz:
         raise HTTPException(status_code=404, detail="No business data. Complete onboarding first.")
     analysis = compute_analysis(biz)
@@ -69,7 +75,7 @@ async def get_analysis(user: dict = Depends(get_current_user)):
         "name": e.get("name", "Unnamed"),
         "value": float(e.get("monthly_amount", 0)),
         "category": e.get("category", "other"),
-    } for e in biz.get("expenses", [])]
+    } for e in (biz.get("expenses") or [])]
 
     now = datetime.now(timezone.utc).isoformat()
     activity = [
@@ -89,7 +95,8 @@ async def get_analysis(user: dict = Depends(get_current_user)):
 
 @router.get("/forecasts")
 async def get_forecasts(months: int = 12, user: dict = Depends(get_current_user)):
-    biz = await db.businesses.find_one({"user_id": user["id"]}, {"_id": 0})
-    if not biz:
+    db = await get_db()
+    res = await db.table("businesses").select("*").eq("user_id", user["id"]).maybe_single().execute()
+    if not res.data:
         raise HTTPException(status_code=404, detail="No business data")
-    return {"scenarios": compute_forecasts(biz, months), "currency": biz.get("currency", "DZD")}
+    return {"scenarios": compute_forecasts(res.data, months), "currency": res.data.get("currency", "DZD")}

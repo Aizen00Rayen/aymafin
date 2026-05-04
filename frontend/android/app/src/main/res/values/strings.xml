@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AYMAFIN</string>
+    <string name="title_activity_main">AYMAFIN</string>
+    <string name="package_name">com.aymafin.app</string>
+    <string name="custom_url_scheme">com.aymafin.app</string>
+</resources>

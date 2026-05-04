@@ -1,4 +1,4 @@
-"""AYMAFIN main app — composes routers and runs startup/shutdown."""
+"""AYMAFIN main app — composes routers, seeds admin on startup."""
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, APIRouter
 from starlette.middleware.cors import CORSMiddleware
 
-from config import db, client
+from config import get_db
 from auth_utils import hash_password, verify_password
 from routers import auth as auth_router
 from routers import business as business_router
@@ -27,9 +27,11 @@ async def seed_admin():
     import os
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@aymafin.com").lower()
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
-    existing = await db.users.find_one({"email": admin_email})
+    db = await get_db()
+    existing_res = await db.table("users").select("id,password_hash,role").eq("email", admin_email).maybe_single().execute()
+    existing = existing_res.data
     if not existing:
-        await db.users.insert_one({
+        await db.table("users").insert({
             "id": str(uuid.uuid4()),
             "email": admin_email,
             "name": "AYMAFIN Admin",
@@ -37,7 +39,7 @@ async def seed_admin():
             "role": "admin",
             "onboarded": False,
             "created_at": datetime.now(timezone.utc).isoformat(),
-        })
+        }).execute()
         logger.info(f"Seeded admin user: {admin_email}")
     else:
         updates = {}
@@ -46,27 +48,13 @@ async def seed_admin():
         if existing.get("role") != "admin":
             updates["role"] = "admin"
         if updates:
-            await db.users.update_one({"email": admin_email}, {"$set": updates})
+            await db.table("users").update(updates).eq("email", admin_email).execute()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Startup
-    await db.users.create_index("email", unique=True)
-    await db.users.create_index("id", unique=True)
-    await db.users.create_index("deleted_at")
-    await db.businesses.create_index("user_id")
-    await db.reports.create_index([("user_id", 1), ("created_at", -1)])
-    await db.login_attempts.create_index("identifier")
-    await db.accounting_entries.create_index([("user_id", 1), ("period", 1), ("account_code", 1)])
-    await db.bilan_entries.create_index([("user_id", 1), ("period", 1)], unique=True)
-    await db.journal_entries.create_index([("user_id", 1), ("date", 1)])
-    await db.treasury_entries.create_index([("user_id", 1), ("date", 1)])
-    await db.invoices.create_index([("user_id", 1), ("date", -1)])
     await seed_admin()
     yield
-    # Shutdown
-    client.close()
 
 
 app = FastAPI(title="AYMAFIN API", lifespan=lifespan)
