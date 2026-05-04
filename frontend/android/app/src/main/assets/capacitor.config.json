@@ -1,0 +1,9 @@
+{
+	"appId": "com.aymafin.app",
+	"appName": "AYMAFIN",
+	"webDir": "build",
+	"server": {
+		"androidScheme": "https"
+	},
+	"android": {}
+}
