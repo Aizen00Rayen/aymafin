@@ -1,7 +1,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 
-const LOGO_URL = "/logo.png";
+const LOGO_URL = "./logo.png";
 
 // Animated CSS / SVG version of the logo (3D R3F is not React 19.0 compatible yet)
 export default function HeroLogo({ className = "" }) {

@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import { ArrowRight, Mail, Lock, User2 } from "lucide-react";
 
-const LOGO = "/logo.png";
+const LOGO = "./logo.png";
 
 export default function Auth() {
   const { t } = useTranslation();
@@ -20,6 +20,18 @@ export default function Auth() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+
+  const enterDemo = async () => {
+    setErr(""); setLoading(true);
+    try {
+      const data = await login("demo@aymafin.com", "demo123");
+      navigate(data.onboarded ? "/dashboard" : "/onboarding", { replace: true });
+    } catch (e) {
+      setErr(formatApiError(e.response?.data?.detail) || e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -108,6 +120,21 @@ export default function Auth() {
           <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setErr(""); }}
             className="mt-5 w-full text-sm text-zinc-400 hover:text-white transition" data-testid="auth-mode-toggle">
             {mode === "login" ? t("auth.switchToRegister") : t("auth.switchToLogin")}
+          </button>
+
+          <div className="mt-4 flex items-center gap-3">
+            <div className="flex-1 h-px bg-white/10" />
+            <span className="text-xs text-zinc-600">ou</span>
+            <div className="flex-1 h-px bg-white/10" />
+          </div>
+
+          <button
+            type="button"
+            onClick={enterDemo}
+            disabled={loading}
+            className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-50 text-zinc-300 font-medium px-6 py-3 transition active:scale-95"
+            data-testid="auth-demo">
+            {loading ? "…" : "Mode démo — voir les données exemple"}
           </button>
         </motion.div>
       </div>

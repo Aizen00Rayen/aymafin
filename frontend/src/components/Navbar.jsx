@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../contexts/AuthContext";
 import { Menu, X, Globe, ChevronDown } from "lucide-react";
 
-const LOGO = "/logo.png";
+const LOGO = "./logo.png";
 
 const LANGS = [
   { code: "fr", label: "FR", name: "Français" },

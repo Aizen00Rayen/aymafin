@@ -171,7 +171,7 @@ export default function Landing() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 grid gap-8 md:grid-cols-3 md:items-start">
           <div>
             <div className="flex items-center gap-2.5 mb-3">
-              <img src="/logo.png"
+              <img src="./logo.png"
                    alt="" className="size-8 rounded-lg" />
               <span className="font-display font-black text-base tracking-tight">AYMAFIN</span>
             </div>

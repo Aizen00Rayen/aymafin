@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import Navbar from "./Navbar";
 
-const LOGO = "/logo.png";
+const LOGO = "./logo.png";
 
 export default function AppLayout({ children }) {
   const { t } = useTranslation();
