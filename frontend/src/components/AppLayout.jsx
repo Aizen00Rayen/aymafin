@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import Navbar from "./Navbar";
 
-const LOGO = "https://customer-assets.emergentagent.com/job_b01d42a3-f1ae-4d66-b970-d5ac0810ddbf/artifacts/2vbg1kvr_logo.png";
+const LOGO = "/logo.png";
 
 export default function AppLayout({ children }) {
   const { t } = useTranslation();

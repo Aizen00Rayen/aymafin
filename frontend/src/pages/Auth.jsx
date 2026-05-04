@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import { ArrowRight, Mail, Lock, User2 } from "lucide-react";
 
-const LOGO = "https://customer-assets.emergentagent.com/job_b01d42a3-f1ae-4d66-b970-d5ac0810ddbf/artifacts/2vbg1kvr_logo.png";
+const LOGO = "/logo.png";
 
 export default function Auth() {
   const { t } = useTranslation();
