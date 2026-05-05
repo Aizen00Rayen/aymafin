@@ -542,6 +542,78 @@ async function handleBilling(method: string, path: string, req: Request, origin:
   return err("Not found", 404, origin);
 }
 
+async function handleAnalyzeFinancials(method: string, req: Request, origin: string | null): Promise<Response> {
+  if (method !== "POST") return err("Méthode non autorisée", 405, origin);
+  let user: Record<string, unknown>;
+  try { user = await getUser(req); } catch (e) { return err(String((e as Error).message), 401, origin); }
+  const body = await req.json();
+  const { frng, bfr, tn, cas, caf, re, rf, delai_clients, delai_fournisseurs, score, langue = "fr" } = body as Record<string, unknown>;
+
+  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+  if (apiKey) {
+    try {
+      const systemPrompt = `Tu es AYMA, conseiller financier expert pour les PME et startups algériennes. Réponds uniquement en ${langue === "ar" ? "arabe" : langue === "en" ? "anglais" : "français"}. Fournis des recommandations concrètes et actionnables basées sur les ratios financiers fournis. Réponds UNIQUEMENT avec un JSON valide, sans markdown, sans texte avant ou après.`;
+      const userPrompt = `Voici les ratios financiers de l'entreprise :
+FRNG = ${frng} DA, BFR = ${bfr} DA, TN = ${tn} DA (Cas ${cas})
+CAF = ${caf} DA, RE = ${re}%, RF = ${rf}%
+Délai clients = ${delai_clients} jours, Délai fournisseurs = ${delai_fournisseurs} jours
+Score de santé = ${score}/100
+
+Génère 4 à 5 recommandations prioritaires sous ce format JSON exact :
+{"recommandations":[{"priorite":"haute|moyenne|faible","titre":"...","detail":"...","action":"..."}]}`;
+
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 1024,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userPrompt }],
+        }),
+      });
+      if (resp.ok) {
+        const aiData = await resp.json() as Record<string, unknown>;
+        const content = (aiData.content as Array<Record<string, unknown>>)?.[0]?.text as string;
+        if (content) {
+          const parsed = JSON.parse(content);
+          // Save to ai_analyses table
+          const db = getDB();
+          await db.from("ai_analyses").insert({
+            id: crypto.randomUUID(),
+            user_id: String(user.id),
+            frng: Number(frng), bfr: Number(bfr), tn: Number(tn),
+            cas_equilibre: Number(cas), caf: Number(caf),
+            re: Number(re), rf: Number(rf),
+            delai_clients: Number(delai_clients), delai_fourn: Number(delai_fournisseurs),
+            score_sante: Number(score),
+            recommandations: parsed.recommandations,
+            created_at: new Date().toISOString(),
+          }).catch(() => {/* ignore save errors */});
+          return json(parsed, 200, {}, origin);
+        }
+      }
+    } catch (e) {
+      console.error("[analyze-financials] Claude error:", e);
+    }
+  }
+
+  // Fallback: rule-based recommendations
+  const recs: Array<Record<string, string>> = [];
+  if (Number(frng) < 0) recs.push({ priorite: "haute", titre: "Renforcer les capitaux permanents", detail: `Votre FRNG de ${Number(frng).toLocaleString("fr-DZ")} DA est négatif, indiquant que vos ressources permanentes ne couvrent pas vos actifs immobilisés.`, action: "Envisagez une augmentation de capital, des emprunts à long terme ou la cession d'actifs non stratégiques." });
+  if (Number(tn) < 0) recs.push({ priorite: "haute", titre: "Améliorer la trésorerie nette", detail: `Votre trésorerie nette est négative (${Number(tn).toLocaleString("fr-DZ")} DA), créant un risque de défaut de paiement à court terme.`, action: "Négociez des lignes de crédit court terme et accélérez l'encaissement de vos créances clients." });
+  if (Number(caf) < 0) recs.push({ priorite: "haute", titre: "Améliorer la capacité d'autofinancement", detail: "Votre CAF négative indique que l'activité ne génère pas suffisamment de ressources pour se financer elle-même.", action: "Réduisez les charges fixes, améliorez la marge brute et négociez de meilleures conditions d'achat." });
+  if (Number(re) < 1) recs.push({ priorite: "moyenne", titre: "Optimiser la rentabilité économique", detail: `Votre rentabilité économique de ${Number(re).toFixed(2)}% est inférieure au seuil minimal de 1%.`, action: "Optimisez l'utilisation de vos actifs : réduisez les stocks dormants et améliorer le taux d'utilisation des équipements." });
+  if (Number(delai_clients) > 90) recs.push({ priorite: "haute", titre: "Réduire les délais de paiement clients", detail: `Vos clients paient en moyenne en ${delai_clients} jours, bien au-delà du seuil optimal de 60 jours.`, action: "Mettez en place des relances automatiques à J+30 et J+60, et envisagez l'affacturage pour les créances importantes." });
+  else if (Number(delai_clients) > Number(delai_fournisseurs)) recs.push({ priorite: "moyenne", titre: "Équilibrer les délais clients / fournisseurs", detail: `Vous encaissez en ${delai_clients}j mais payez en ${delai_fournisseurs}j, créant un décalage de trésorerie de ${Math.round(Number(delai_clients) - Number(delai_fournisseurs))} jours.`, action: "Négociez des délais de paiement plus longs avec vos fournisseurs ou accélérez l'encaissement client." });
+  if (recs.length === 0) recs.push({ priorite: "faible", titre: "Maintenir l'équilibre financier", detail: "Vos indicateurs financiers sont globalement dans les normes. Continuez à surveiller régulièrement vos ratios.", action: "Planifiez des analyses trimestrielles et anticipez les besoins de financement pour votre croissance." });
+  return json({ recommandations: recs }, 200, {}, origin);
+}
+
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get("origin");
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(origin) });
@@ -561,6 +633,7 @@ Deno.serve(async (req: Request) => {
     if (p.startsWith("/treasury")) return await handleTreasury(method, p, req, origin);
     if (p.startsWith("/reports")) return await handleReports(method, p, req, origin);
     if (p === "/ai-analysis") return await handleAIAnalysis(method, p, req, origin);
+    if (p === "/analyze-financials") return await handleAnalyzeFinancials(method, req, origin);
     if (p.startsWith("/admin")) return await handleAdmin(method, p, req, origin);
     if (p.startsWith("/chat")) return await handleChat(method, p, req, origin);
     if (p.startsWith("/billing")) return await handleBilling(method, p, req, origin);
