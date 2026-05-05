@@ -190,7 +190,9 @@ export default function DataEntry() {
       await api.post("/accounting/entries", {
         period: data.date.slice(0, 7),
         account_code: sel.subcode,
+        entry_type: sel.type,
         amount: data.amount,
+        date: data.date,
         note: data.comment || null,
       });
       try { navigator.vibrate?.(60); } catch {}

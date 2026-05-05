@@ -59,10 +59,12 @@ export default function Navbar({ variant = "landing" }) {
 
   const navItems = variant === "app"
     ? [
-        { to: "/dashboard", label: t("nav.dashboard"), testid: "nav-dashboard" },
-        { to: "/forecasting", label: t("nav.forecasting"), testid: "nav-forecasting" },
-        { to: "/reports", label: t("nav.reports"), testid: "nav-reports" },
-        { to: "/chat", label: t("nav.chat"), testid: "nav-chat" },
+        { to: "/dashboard",            label: "Tableau de bord",   testid: "nav-dashboard" },
+        { to: "/data-entry",           label: "Saisie",            testid: "nav-data-entry" },
+        { to: "/treasury",             label: "Trésorerie",        testid: "nav-treasury" },
+        { to: "/financial-statements", label: "États financiers",  testid: "nav-financials" },
+        { to: "/ai-analysis",          label: "Analyse IA",        testid: "nav-ai" },
+        { to: "/reports",              label: "Rapports PDF",      testid: "nav-reports" },
       ]
     : [
         { href: "#features", label: t("nav.features"), testid: "nav-features" },
