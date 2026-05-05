@@ -1,72 +1,109 @@
 import React from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { useTranslation } from "react-i18next";
 import { useAuth } from "../contexts/AuthContext";
 import {
-  LayoutDashboard, TrendingUp, FileText, MessageSquareText, Settings, LogOut, Shield,
-  BookOpen, Wallet, BarChart3, Brain,
+  LayoutDashboard, BookOpen, Wallet, BarChart3, Brain,
+  FileText, Settings, LogOut, Shield,
 } from "lucide-react";
 import Navbar from "./Navbar";
 
-const LOGO = "./logo.png";
-
 export default function AppLayout({ children }) {
-  const { t } = useTranslation();
   const { logout, user } = useAuth();
   const navigate = useNavigate();
 
   const items = [
-    { to: "/dashboard", label: t("nav.dashboard"), icon: LayoutDashboard, tid: "side-dashboard" },
-    { to: "/data-entry", label: "Saisie des données", icon: BookOpen, tid: "side-data-entry" },
-    { to: "/treasury", label: "Trésorerie", icon: Wallet, tid: "side-treasury" },
-    { to: "/financial-statements", label: "États financiers", icon: BarChart3, tid: "side-financial" },
-    { to: "/ai-analysis", label: "Analyse IA", icon: Brain, tid: "side-ai" },
-    { to: "/forecasting", label: t("nav.forecasting"), icon: TrendingUp, tid: "side-forecasting" },
-    { to: "/reports", label: t("nav.reports"), icon: FileText, tid: "side-reports" },
-    { to: "/chat", label: t("nav.chat"), icon: MessageSquareText, tid: "side-chat" },
-    { to: "/settings", label: t("nav.settings"), icon: Settings, tid: "side-settings" },
-    ...(user?.role === "admin" ? [{ to: "/admin", label: t("admin.nav"), icon: Shield, tid: "side-admin" }] : []),
+    { to: "/dashboard",            label: "Tableau de bord",   icon: LayoutDashboard, color: "#00C3FF" },
+    { to: "/data-entry",           label: "Saisie des données", icon: BookOpen,        color: "#00FF87" },
+    { to: "/treasury",             label: "Trésorerie",         icon: Wallet,          color: "#FFB86C" },
+    { to: "/financial-statements", label: "États financiers",   icon: BarChart3,       color: "#A78BFA" },
+    { to: "/ai-analysis",          label: "Analyse IA",         icon: Brain,           color: "#FF6B6B" },
+    { to: "/reports",              label: "Rapports PDF",       icon: FileText,        color: "#34D399" },
+    { to: "/settings",             label: "Paramètres",         icon: Settings,        color: "#64748B" },
+    ...(user?.role === "admin"
+      ? [{ to: "/admin", label: "Administration", icon: Shield, color: "#F59E0B" }]
+      : []),
   ];
 
   return (
     <div className="min-h-screen bg-[#09090b] text-white">
       <Navbar variant="app" />
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 lg:py-10 flex gap-6">
+        {/* Sidebar */}
         <aside className="hidden lg:flex flex-col w-60 shrink-0 sticky top-20 self-start">
           <div className="glass rounded-2xl p-3">
-            <div className="px-3 py-2 mb-2">
-              <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">{t("dashboard.welcome")}</div>
-              <div className="font-display font-bold truncate">{user?.name || user?.email}</div>
+            {/* User info */}
+            <div className="px-3 py-3 mb-1">
+              <div className="flex items-center gap-3">
+                <div
+                  className="size-9 rounded-xl grid place-items-center shrink-0"
+                  style={{ background: "#00C3FF18", border: "1px solid #00C3FF30" }}
+                >
+                  <span className="text-sm font-bold text-[#00C3FF]">
+                    {(user?.name || user?.email || "?")[0].toUpperCase()}
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <div className="font-semibold text-sm truncate">{user?.name || "Utilisateur"}</div>
+                  <div className="text-xs text-zinc-500 truncate">{user?.email}</div>
+                </div>
+              </div>
             </div>
-            <nav className="flex flex-col gap-1">
-              {items.map(({ to, label, icon: Icon, tid }) => (
+
+            <div className="h-px bg-white/5 mx-3 mb-2" />
+
+            {/* Nav items */}
+            <nav className="flex flex-col gap-0.5">
+              {items.map(({ to, label, icon: Icon, color }) => (
                 <NavLink
                   key={to}
                   to={to}
-                  data-testid={tid}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition ${
+                    `group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
                       isActive
-                        ? "bg-[#2563eb]/15 text-white border border-[#2563eb]/30"
+                        ? "text-white border border-white/10 bg-white/5"
                         : "text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent"
                     }`
                   }
                 >
-                  <Icon className="size-4" />
-                  {label}
+                  {({ isActive }) => (
+                    <>
+                      <div
+                        className="size-7 rounded-lg grid place-items-center shrink-0 transition-all"
+                        style={{
+                          background: isActive ? `${color}22` : "transparent",
+                          border: `1px solid ${isActive ? color + "44" : "transparent"}`,
+                        }}
+                      >
+                        <Icon className="size-3.5" style={{ color: isActive ? color : undefined }} />
+                      </div>
+                      <span className="truncate">{label}</span>
+                      {isActive && (
+                        <div className="ml-auto size-1.5 rounded-full shrink-0" style={{ background: color }} />
+                      )}
+                    </>
+                  )}
                 </NavLink>
               ))}
+
+              <div className="h-px bg-white/5 mx-3 my-1" />
+
               <button
                 onClick={async () => { await logout(); navigate("/"); }}
-                className="mt-2 flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent transition"
-                data-testid="side-logout"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-zinc-500 hover:text-red-400 hover:bg-red-500/5 border border-transparent transition-all"
               >
-                <LogOut className="size-4" />
-                {t("nav.logout")}
+                <div className="size-7 rounded-lg grid place-items-center shrink-0">
+                  <LogOut className="size-3.5" />
+                </div>
+                Déconnexion
               </button>
             </nav>
           </div>
+
+          <div className="mt-3 text-center">
+            <span className="text-xs text-zinc-700 font-mono">AYMAFIN v1.10</span>
+          </div>
         </aside>
+
         <main className="flex-1 min-w-0">{children}</main>
       </div>
     </div>
