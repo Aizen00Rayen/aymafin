@@ -83,31 +83,6 @@ async function getUser(req: Request): Promise<Record<string, unknown>> {
   return res.data as Record<string, unknown>;
 }
 
-const PLAN_CHARGES: Record<string, { name: string; accounts: Record<string, string> }> = {
-  "60": { name: "Achats", accounts: { "601": "Achats stockés - Matières premières", "602": "Achats stockés - Autres approvisionnements", "603": "Variations de stocks", "604": "Achat d'études et prestations de services", "605": "Achats de matériels, équipements et travaux", "606": "Achats non stockés de matières et fournitures", "607": "Achats de marchandises", "608": "Frais accessoires d'achats", "609": "Rabais, remises et ristournes obtenus sur achats" } },
-  "61": { name: "Services extérieurs", accounts: { "611": "Sous-traitance générale", "612": "Redevances de crédit-bail", "613": "Locations", "614": "Charges locatives et de co-propriété", "615": "Entretiens et réparations", "616": "Primes d'assurance", "617": "Études et recherches", "618": "Divers", "619": "RRR obtenus sur services extérieurs" } },
-  "62": { name: "Autres services extérieurs", accounts: { "621": "Personnel extérieur", "622": "Rémunérations d'intermédiaires et honoraires", "623": "Publicité, publications, relations publiques", "624": "Transports de biens et collectifs", "625": "Déplacements, missions et réceptions", "626": "Frais postaux et télécommunications", "627": "Services bancaires", "628": "Divers", "629": "RRR obtenus sur autres services" } },
-  "63": { name: "Impôts, taxes et versements assimilés", accounts: { "631": "Impôts, taxes sur rémunérations", "633": "Impôts, taxes assimilés" } },
-  "64": { name: "Charges de personnel", accounts: { "641": "Rémunérations du personnel", "645": "Charges de sécurité sociale", "647": "Autres charges sociales", "648": "Autres charges de personnel" } },
-  "65": { name: "Autres charges de gestion courante", accounts: { "651": "Redevances pour concessions", "652": "Valeur comptable des éléments d'actif cédés", "654": "Pertes sur créances irrécouvrables", "658": "Autres charges de gestion courante" } },
-  "66": { name: "Charges financières", accounts: { "661": "Charges d'intérêts", "664": "Pertes sur créances liées aux participations", "665": "Escomptes accordés", "666": "Pertes de change", "668": "Autres charges financières" } },
-  "67": { name: "Charges exceptionnelles", accounts: { "671": "Charges exceptionnelles sur opérations de gestion", "672": "Charges sur exercices antérieurs", "678": "Autres charges exceptionnelles" } },
-  "68": { name: "Dotations aux amortissements et dépréciations", accounts: { "681": "Dotations aux amortissements d'exploitation", "686": "Dotations aux amortissements financières", "687": "Dotations aux amortissements exceptionnelles" } },
-  "69": { name: "Impôts sur les bénéfices", accounts: { "695": "Impôts sur les bénéfices", "699": "Produits - report en arrière des déficits" } }
-};
-
-const PLAN_PRODUITS: Record<string, { name: string; accounts: Record<string, string> }> = {
-  "70": { name: "Ventes de produits fabriqués, prestations de services", accounts: { "701": "Ventes de produits finis", "702": "Ventes de produits intermédiaires", "703": "Ventes de produits résiduels", "704": "Travaux", "705": "Études", "706": "Prestations de services", "707": "Ventes de marchandises", "708": "Produits des activités annexes", "709": "RRR accordés" } },
-  "71": { name: "Production stockée", accounts: { "713": "Variations de stocks" } },
-  "72": { name: "Production immobilisée", accounts: { "721": "Immobilisations incorporelles", "722": "Immobilisations corporelles" } },
-  "73": { name: "Concours publics", accounts: { "731": "Concours publics" } },
-  "74": { name: "Subventions d'exploitation", accounts: { "741": "Subventions d'exploitation" } },
-  "75": { name: "Autres produits de gestion courante", accounts: { "751": "Redevances concessions", "752": "Revenus des immeubles", "755": "Contributions financières", "756": "Cotisations", "758": "Indemnités et autres produits" } },
-  "76": { name: "Produits financiers", accounts: { "761": "Produits des participations", "762": "Produits des immobilisations financières", "764": "Revenus valeurs mobilières", "765": "Escomptes obtenus", "766": "Gains de change", "768": "Autres produits financiers" } },
-  "77": { name: "Produits exceptionnels", accounts: { "772": "Produits sur exercices antérieurs", "775": "Produits de cessions d'éléments d'actif", "778": "Autres produits exceptionnels" } },
-  "78": { name: "Reprises sur amortissements et dépréciations", accounts: { "781": "Reprises d'exploitation", "786": "Reprises financières", "787": "Reprises exceptionnelles" } },
-  "79": { name: "Transfert de charges", accounts: { "791": "Transferts d'exploitation", "796": "Transferts financiers", "797": "Transferts exceptionnels" } }
-};
 
 function computeAnalysis(biz: Record<string, unknown>) {
   const streams = (biz.revenue_streams as Array<Record<string, unknown>>) || [];
@@ -253,7 +228,7 @@ async function handleAccounting(method: string, path: string, req: Request, orig
   const uid = String(user.id);
   const url = new URL(req.url);
   const period = url.searchParams.get("period") || "";
-  if (method === "GET" && path === "/accounting/plan") return json({ charges: PLAN_CHARGES, produits: PLAN_PRODUITS }, 200, {}, origin);
+  if (method === "GET" && path === "/accounting/plan") return json({ charges: {}, produits: {} }, 200, {}, origin);
   if (method === "GET" && path === "/accounting/periods") {
     const ae = await db.from("accounting_entries").select("period").eq("user_id", uid);
     const be = await db.from("bilan_entries").select("period").eq("user_id", uid);
@@ -268,17 +243,13 @@ async function handleAccounting(method: string, path: string, req: Request, orig
   }
   if (method === "POST" && path === "/accounting/entries") {
     const body = await req.json();
-    const code = String(body.account_code || "");
-    const etype = code[0] === "6" ? "charge" : code[0] === "7" ? "produit" : null;
-    if (!etype) return err("Code compte invalide (doit commencer par 6 ou 7)", 400, origin);
+    if (!body.amount || !body.date || !body.entry_type || !body.label) return err("amount, date, entry_type, label requis", 400, origin);
+    const etype = String(body.entry_type);
+    if (!["charge", "produit"].includes(etype)) return err("entry_type doit être 'charge' ou 'produit'", 400, origin);
     const now = new Date().toISOString();
-    const existing = await db.from("accounting_entries").select("id").eq("user_id", uid).eq("period", body.period).eq("account_code", code).maybeSingle();
-    if (existing.data) {
-      await db.from("accounting_entries").update({ amount: body.amount, note: body.note, updated_at: now }).eq("id", (existing.data as Record<string,unknown>).id);
-      return json({ id: (existing.data as Record<string,unknown>).id, ok: true }, 200, {}, origin);
-    }
     const id = crypto.randomUUID();
-    await db.from("accounting_entries").insert({ id, user_id: uid, period: body.period, account_code: code, entry_type: etype, amount: body.amount, note: body.note || null, created_at: now, updated_at: now });
+    const ins = await db.from("accounting_entries").insert({ id, user_id: uid, period: body.period || String(body.date).slice(0, 7), label: String(body.label), entry_type: etype, amount: body.amount, date: body.date, note: body.note || null, created_at: now, updated_at: now });
+    if (ins.error) return err("Erreur insertion: " + ins.error.message, 500, origin);
     return json({ id, ok: true }, 200, {}, origin);
   }
   if (method === "DELETE" && path.startsWith("/accounting/entries/")) {
@@ -288,11 +259,11 @@ async function handleAccounting(method: string, path: string, req: Request, orig
   if (method === "GET" && path === "/accounting/tcr") {
     const res = await db.from("accounting_entries").select("*").eq("user_id", uid).eq("period", period);
     const entries = (res.data || []) as Array<Record<string,unknown>>;
-    const charges: Record<string,number> = {}, produits: Record<string,number> = {};
-    for (const e of entries) { if (e.entry_type === "charge") charges[String(e.account_code)] = Number(e.amount); else produits[String(e.account_code)] = Number(e.amount); }
-    const groupByClass = (data: Record<string,number>, plan: typeof PLAN_CHARGES) => Object.entries(plan).map(([cls, info]) => ({ class: cls, name: info.name, subtotal: Math.round(Object.entries(data).filter(([k]) => k.startsWith(cls)).reduce((s,[,v]) => s+v, 0)*100)/100, accounts: Object.entries(info.accounts).filter(([k]) => (data[k]||0) !== 0).map(([k,n]) => ({ code: k, name: n, amount: data[k]||0 })) }));
-    const tc = Object.values(charges).reduce((s,v) => s+v, 0), tp = Object.values(produits).reduce((s,v) => s+v, 0);
-    return json({ period, charges_detail: groupByClass(charges, PLAN_CHARGES), produits_detail: groupByClass(produits, PLAN_PRODUITS), charges_raw: charges, produits_raw: produits, total_charges: Math.round(tc*100)/100, total_produits: Math.round(tp*100)/100, resultat_net: Math.round((tp-tc)*100)/100 }, 200, {}, origin);
+    const charges_list = entries.filter(e => e.entry_type === "charge").map(e => ({ id: e.id, label: String(e.label || e.note || ""), amount: Number(e.amount), date: e.date }));
+    const produits_list = entries.filter(e => e.entry_type === "produit").map(e => ({ id: e.id, label: String(e.label || e.note || ""), amount: Number(e.amount), date: e.date }));
+    const tc = charges_list.reduce((s, e) => s + e.amount, 0);
+    const tp = produits_list.reduce((s, e) => s + e.amount, 0);
+    return json({ period, charges_list, produits_list, total_charges: Math.round(tc*100)/100, total_produits: Math.round(tp*100)/100, resultat_net: Math.round((tp-tc)*100)/100 }, 200, {}, origin);
   }
   if (method === "GET" && path === "/accounting/bilan") {
     const raw = (await db.from("bilan_entries").select("*").eq("user_id", uid).eq("period", period).maybeSingle()).data as Record<string,number>|null;
@@ -433,10 +404,9 @@ async function handleAIAnalysis(method: string, path: string, req: Request, orig
   const period = url.searchParams.get("period") || "";
   if (method === "GET" && path === "/ai-analysis") {
     const entries = ((await db.from("accounting_entries").select("*").eq("user_id", uid).eq("period", period)).data || []) as Array<Record<string,unknown>>;
-    const charges_raw: Record<string,number> = {}, produits_raw: Record<string,number> = {};
-    for (const e of entries) { if (e.entry_type==="charge") charges_raw[String(e.account_code)]=Number(e.amount); else produits_raw[String(e.account_code)]=Number(e.amount); }
-    const tc = Object.values(charges_raw).reduce((s,v)=>s+v,0), tp = Object.values(produits_raw).reduce((s,v)=>s+v,0);
-    const tcr = { charges_raw, produits_raw, total_charges: tc, total_produits: tp, resultat_net: tp-tc };
+    const tc = entries.filter(e=>e.entry_type==="charge").reduce((s,e)=>s+Number(e.amount),0);
+    const tp = entries.filter(e=>e.entry_type==="produit").reduce((s,e)=>s+Number(e.amount),0);
+    const resultat_net = tp - tc;
     const rawRes = await db.from("bilan_entries").select("*").eq("user_id", uid).eq("period", period).maybeSingle();
     if (!rawRes.data) return err("Données de bilan introuvables pour cette période.", 404, origin);
     const raw = rawRes.data as Record<string,number>;
@@ -444,7 +414,7 @@ async function handleAIAnalysis(method: string, path: string, req: Request, orig
     const icorp = raw.immo_corporelles_brut - raw.immo_corporelles_amort;
     const anc = raw.ecarts_acquisition + iinc + icorp + raw.immo_financieres + raw.impots_differes_actif;
     const ac = raw.stocks + raw.creances_clients + raw.autres_debiteurs + raw.impots_taxes_recuperables + raw.tresorerie_actif;
-    const cp = raw.capital + raw.reserves + tcr.resultat_net + raw.autres_capitaux_propres;
+    const cp = raw.capital + raw.reserves + resultat_net + raw.autres_capitaux_propres;
     const pnc = raw.emprunts_lt + raw.impots_differes_passif;
     const pc = raw.fournisseurs + raw.dettes_personnel + raw.dettes_impots + raw.autres_dettes_ct + raw.decouvert_bancaire;
     const frng = (cp+pnc) - anc, dispo = raw.tresorerie_actif, avances = raw.decouvert_bancaire;
@@ -453,20 +423,16 @@ async function handleAIAnalysis(method: string, path: string, req: Request, orig
     const cas_e = frng>thr&&bfr<-thr&&tn>thr?1:frng>thr&&bfr>thr&&tn>thr?2:frng>thr&&bfr>thr&&tn>-thr&&tn<thr?3:frng<-thr&&bfr<-thr&&tn>thr?4:frng<-thr&&bfr>thr&&tn<-thr?5:frng<-thr&&tn<-thr?6:7;
     const emojis=["✅","✅","⚠️","⚠️","🚨","🚨","⚠️"], interps=["Situation très favorable","Situation saine","Situation correcte mais sous pression","Situation fragile","Situation difficile","Situation critique","Équilibre précaire"];
     const equilibre = { frng: Math.round(frng*100)/100, bfr: Math.round(bfr*100)/100, tn: Math.round(tn*100)/100, cas: cas_e, emoji: emojis[cas_e-1], interpretation: interps[cas_e-1] };
-    const dotations = Object.entries(charges_raw).filter(([k])=>k.startsWith("68")).reduce((s,[,v])=>s+v,0);
-    const reprises = Object.entries(produits_raw).filter(([k])=>k.startsWith("78")).reduce((s,[,v])=>s+v,0);
-    const caf_val = tcr.resultat_net + dotations - reprises + (charges_raw["652"]||0) - (produits_raw["775"]||0);
-    const caf = { caf: Math.round(caf_val*100)/100, cas: caf_val>0?1:caf_val<0?2:3, emoji: caf_val>0?"✅":caf_val<0?"🚨":"⚠️", interpretation: caf_val>0?"CAF positive":caf_val<0?"CAF négative":"CAF nulle" };
-    const re = (anc+ac)>0?(tcr.resultat_net/(anc+ac)*100):0, rf = cp>0?(tcr.resultat_net/cp*100):0;
+    const caf_val = resultat_net;
+    const caf = { caf: Math.round(caf_val*100)/100, cas: caf_val>0?1:caf_val<0?2:3, emoji: caf_val>0?"✅":caf_val<0?"🚨":"⚠️", interpretation: caf_val>0?"Résultat positif":caf_val<0?"Résultat négatif":"Résultat nul" };
+    const re = (anc+ac)>0?(resultat_net/(anc+ac)*100):0, rf = cp>0?(resultat_net/cp*100):0;
     const rentabilite = { re: Math.round(re*100)/100, rf: Math.round(rf*100)/100, re_cas: re>5?1:re>=1?2:3, re_emoji: re>5?"✅":re>=1?"⚠️":"🚨", re_interpretation: re>5?"Bonne rentabilité":re>=1?"Rentabilité moyenne":"Rentabilité faible", rf_cas: rf>15?1:rf>=5?2:3, rf_emoji: rf>15?"✅":rf>=5?"⚠️":"🚨", rf_interpretation: rf>15?"Bon rendement":rf>=5?"Rendement moyen":"Rendement faible" };
-    const ca = Object.entries(produits_raw).filter(([k])=>k.startsWith("70")&&k!=="709").reduce((s,[,v])=>s+v,0);
-    const achats = Object.entries(charges_raw).filter(([k])=>k.startsWith("60")&&!["603","609"].includes(k)).reduce((s,[,v])=>s+v,0);
-    const dc = ca>0?(raw.creances_clients/ca*360):0, df = achats>0?(raw.fournisseurs/achats*360):0;
+    const dc = tp>0?(raw.creances_clients/tp*360):0, df = tc>0?(raw.fournisseurs/tc*360):0;
     const delais = { delai_clients: Math.round(dc*10)/10, delai_fournisseurs: Math.round(df*10)/10, dc_cas: dc<60?1:dc<=90?2:3, dc_emoji: dc<60?"✅":dc<=90?"⚠️":"🚨", dc_interpretation: dc<60?"Délai clients rapide":dc<=90?"Délai clients correct":"Clients paient lentement", df_cas: df<60?1:df<=90?2:3, df_emoji: df<60?"✅":df<=90?"⚠️":"🚨", df_interpretation: df<60?"Paiement fournisseurs rapide":"Délai fournisseurs normal", comp_cas: dc>df?1:2, comp_emoji: dc>df?"⚠️":"✅", comp_interpretation: dc>df?"Clients paient plus lentement que fournisseurs":"Situation favorable" };
     const recs = [];
     if (frng<0) recs.push({priority:"high",area:"Structure financière",title:"Renforcer les capitaux permanents",action:"FRNG négatif. Augmentez capitaux propres ou emprunts LT."});
     if (tn<0) recs.push({priority:"high",area:"Trésorerie",title:"Améliorer la trésorerie nette",action:"TN négative. Lignes de crédit CT ou accélérez encaissement."});
-    if (caf_val<0) recs.push({priority:"high",area:"Autofinancement",title:"Améliorer la CAF",action:"CAF négative. Réduisez charges et améliorez marge brute."});
+    if (caf_val<0) recs.push({priority:"high",area:"Résultat",title:"Améliorer le résultat net",action:"Résultat négatif. Réduisez charges et améliorez chiffre d'affaires."});
     if (re<1) recs.push({priority:"medium",area:"Rentabilité",title:"Améliorer la rentabilité des actifs",action:"RE<1%. Optimisez utilisation des ressources."});
     if (dc>90) recs.push({priority:"high",area:"Gestion clients",title:"Réduire délais clients",action:"Délai >90j: relances systématiques et affacturage."});
     if (!recs.length) recs.push({priority:"low",area:"Général",title:"Situation équilibrée",action:"Indicateurs dans les normes. Continuez à surveiller."});
