@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Save, Plus, Trash2, X, Scale, BookOpen, FileSpreadsheet } from "lucide-react";
+import { Save, Plus, Trash2, X, Scale, BookOpen, FileSpreadsheet, Download } from "lucide-react";
 import { toast } from "sonner";
 import api from "../lib/api";
 import AppLayout from "../components/AppLayout";
@@ -15,6 +15,11 @@ function nfmt(n) {
   return n.toLocaleString("fr-DZ") + " DA";
 }
 
+function nfmtPDF(n) {
+  if (n == null || n === 0) return "0";
+  return parseFloat(n).toLocaleString("fr-DZ", { maximumFractionDigits: 2 });
+}
+
 function getCurrentPeriod() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -22,108 +27,473 @@ function getCurrentPeriod() {
 
 const JOURNAL_TYPES = ["OUVERTURE", "ACHATS", "BANQUE", "CAISSE", "STOCKS", "OPERATIONS_DIVERS", "SALAIRES", "VENTES"];
 
+// ── PDF download helper (Web Share API for Android, fallback for web) ──────────
+async function downloadPDF(doc, filename) {
+  try {
+    const blob = doc.output("blob");
+    const file = new File([blob], filename, { type: "application/pdf" });
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename });
+      return;
+    }
+  } catch {}
+  doc.save(filename);
+}
+
+// ── Bilan PDF (official Algerian SCF format) ──────────────────────────────────
+async function generateBilanPDF(bilan, period) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210, H = 297, M = 8;
+  const midX = W / 2;
+  const rowH = 6.2;
+
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, 0, W, H, "F");
+
+  // Title
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.8);
+  doc.rect(M, M, W - 2 * M, 16);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(0, 0, 0);
+  doc.text("BILAN COMPTABLE", W / 2, M + 7, { align: "center" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.text(`Exercice : ${period}`, W / 2, M + 13, { align: "center" });
+
+  let tableTop = M + 20;
+
+  // Column headers
+  doc.setFillColor(180, 180, 180);
+  doc.rect(M, tableTop, midX - M, 7, "F");
+  doc.rect(midX, tableTop, W - M - midX, 7, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.text("ACTIF", (M + midX) / 2, tableTop + 4.8, { align: "center" });
+  doc.text("PASSIF", (midX + W - M) / 2, tableTop + 4.8, { align: "center" });
+  doc.setLineWidth(0.3);
+  doc.line(M, tableTop, W - M, tableTop);
+  doc.line(M, tableTop + 7, W - M, tableTop + 7);
+  doc.line(midX, tableTop, midX, tableTop + 7);
+
+  let leftY = tableTop + 7;
+  let rightY = tableTop + 7;
+
+  const drawRow = (x1, x2, y, label, value, bold, section) => {
+    if (section) {
+      doc.setFillColor(220, 220, 220);
+      doc.rect(x1, y, x2 - x1, rowH, "F");
+    }
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(section ? 7.5 : 7);
+    doc.setTextColor(0, 0, 0);
+    const indent = section ? 1 : 4;
+    const maxW = x2 - x1 - indent - 22;
+    const text = doc.splitTextToSize(label, maxW)[0];
+    doc.text(text, x1 + indent, y + 4.2);
+    if (value != null) {
+      doc.setFontSize(7);
+      doc.text(nfmtPDF(value), x2 - 2, y + 4.2, { align: "right" });
+    }
+    doc.setDrawColor(160, 160, 160);
+    doc.setLineWidth(0.15);
+    doc.line(x1, y + rowH, x2, y + rowH);
+  };
+
+  const A = (label, value, bold = false, section = false) => {
+    drawRow(M, midX, leftY, label, value, bold, section);
+    leftY += rowH;
+  };
+  const P = (label, value, bold = false, section = false) => {
+    drawRow(midX, W - M, rightY, label, value, bold, section);
+    rightY += rowH;
+  };
+
+  // ACTIF
+  A("ACTIFS NON COURANTS", null, true, true);
+  A("Écart d'acquisition / Goodwill", bilan.actif.non_courant.ecarts_acquisition);
+  A("Immobilisations incorporelles (net)", bilan.actif.non_courant.immo_incorporelles.net);
+  A("  Brut", bilan.actif.non_courant.immo_incorporelles.brut);
+  A("  Amort. / Dépréciations", bilan.actif.non_courant.immo_incorporelles.amort);
+  A("Immobilisations corporelles (net)", bilan.actif.non_courant.immo_corporelles.net);
+  A("  Brut", bilan.actif.non_courant.immo_corporelles.brut);
+  A("  Amort. / Dépréciations", bilan.actif.non_courant.immo_corporelles.amort);
+  A("Immobilisations financières", bilan.actif.non_courant.immo_financieres);
+  A("Impôts différés actif", bilan.actif.non_courant.impots_differes);
+  A("TOTAL ACTIF NON COURANT", bilan.actif.non_courant.total, true);
+
+  A("ACTIF COURANT", null, true, true);
+  A("Stocks et en-cours", bilan.actif.courant.stocks);
+  A("Clients et créances assimilées", bilan.actif.courant.creances_clients);
+  A("Autres débiteurs", bilan.actif.courant.autres_debiteurs);
+  A("Impôts et taxes récupérables", bilan.actif.courant.impots_taxes);
+  A("Trésorerie et équivalents", bilan.actif.courant.tresorerie);
+  A("TOTAL ACTIF COURANT", bilan.actif.courant.total, true);
+  A("TOTAL GÉNÉRAL ACTIF", bilan.actif.total, true);
+
+  // PASSIF
+  P("CAPITAUX PROPRES", null, true, true);
+  P("Capital émis", bilan.passif.capitaux_propres.capital);
+  P("Primes et réserves consolidées", bilan.passif.capitaux_propres.reserves);
+  P("Résultat net de l'exercice", bilan.passif.capitaux_propres.resultat_net);
+  P("Autres capitaux propres", bilan.passif.capitaux_propres.autres);
+  P("TOTAL CAPITAUX PROPRES (I)", bilan.passif.capitaux_propres.total, true);
+
+  P("PASSIFS NON COURANTS", null, true, true);
+  P("Emprunts et dettes financières LT", bilan.passif.non_courant.emprunts_lt);
+  P("Impôts différés et provisionnés", bilan.passif.non_courant.impots_differes);
+  P("TOTAL PASSIFS NON COURANTS (II)", bilan.passif.non_courant.total, true);
+
+  P("PASSIFS COURANTS", null, true, true);
+  P("Fournisseurs et comptes rattachés", bilan.passif.courant.fournisseurs);
+  P("Dettes envers le personnel", bilan.passif.courant.dettes_personnel);
+  P("Impôts et taxes exigibles", bilan.passif.courant.dettes_impots);
+  P("Autres dettes CT", bilan.passif.courant.autres_dettes);
+  P("Trésorerie passif", bilan.passif.courant.decouvert_bancaire);
+  P("TOTAL PASSIFS COURANTS (III)", bilan.passif.courant.total, true);
+  P("TOTAL GÉNÉRAL PASSIF", bilan.passif.total, true);
+
+  // Outer border
+  const tableH = Math.max(leftY, rightY) - tableTop;
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  doc.rect(M, tableTop, W - 2 * M, tableH);
+  doc.line(midX, tableTop, midX, tableTop + tableH);
+
+  // Equilibre
+  const ecartY = Math.max(leftY, rightY) + 4;
+  const balanced = Math.abs(bilan.ecart) < 0.01;
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(balanced ? 0 : 180, balanced ? 120 : 0, 0);
+  doc.text(
+    balanced ? "Bilan équilibré (Actif = Passif)" : `Attention : Bilan déséquilibré — Écart : ${nfmtPDF(bilan.ecart)} DA`,
+    W / 2, ecartY, { align: "center" }
+  );
+
+  // Footer
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(130, 130, 130);
+  doc.text(`Généré par AYMAFIN le ${new Date().toLocaleDateString("fr-DZ")}`, W / 2, H - 6, { align: "center" });
+
+  return doc;
+}
+
+// ── TCR PDF (official Algerian SCF format) ────────────────────────────────────
+async function generateTCRPDF(data, period) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210, H = 297, M = 10;
+  const rowH = 6.5;
+  let y = M;
+
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, 0, W, H, "F");
+
+  // Title box
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.8);
+  doc.rect(M, y, W - 2 * M, 16);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(0, 0, 0);
+  doc.text("TABLEAU DU COMPTE DE RÉSULTAT (TCR)", W / 2, y + 7, { align: "center" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.text(`Exercice : ${period}`, W / 2, y + 13, { align: "center" });
+  y += 20;
+
+  // Column header
+  const colNote = M + 95;
+  const colN = W - M - 2;
+  doc.setFillColor(180, 180, 180);
+  doc.rect(M, y, W - 2 * M, 7, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.text("DÉSIGNATION", M + 2, y + 4.8);
+  doc.text("NOTE", colNote, y + 4.8, { align: "center" });
+  doc.text("MONTANT N", colN, y + 4.8, { align: "right" });
+  doc.setLineWidth(0.3);
+  doc.line(M, y, W - M, y);
+  doc.line(M, y + 7, W - M, y + 7);
+  doc.line(colNote - 8, y, colNote - 8, y + 7);
+  y += 7;
+
+  const tableTop = y;
+
+  const addRow = (label, value, bold = false, section = false, indent = 0) => {
+    if (y > H - 20) {
+      doc.addPage();
+      doc.setFillColor(255, 255, 255);
+      doc.rect(0, 0, W, H, "F");
+      y = M;
+    }
+    if (section) {
+      doc.setFillColor(220, 220, 220);
+      doc.rect(M, y, W - 2 * M, rowH, "F");
+    }
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(section ? 7.5 : 7);
+    doc.setTextColor(0, 0, 0);
+    const maxW = colNote - M - indent - 10;
+    const text = doc.splitTextToSize(label, maxW)[0];
+    doc.text(text, M + 2 + indent, y + 4.2);
+    if (value != null) {
+      doc.setFontSize(7);
+      doc.text(nfmtPDF(value), colN, y + 4.2, { align: "right" });
+    }
+    doc.setDrawColor(160, 160, 160);
+    doc.setLineWidth(0.15);
+    doc.line(M, y + rowH, W - M, y + rowH);
+    y += rowH;
+  };
+
+  // PRODUITS section
+  addRow("PRODUITS DE L'EXERCICE", null, true, true);
+  if (data.produits_list && data.produits_list.length > 0) {
+    data.produits_list.forEach((e) => addRow(e.label || "—", e.amount, false, false, 3));
+  } else {
+    addRow("Aucun produit saisi", null, false, false, 3);
+  }
+  addRow("I - TOTAL PRODUCTION DE L'EXERCICE", data.total_produits, true);
+
+  // CHARGES section
+  addRow("CHARGES DE L'EXERCICE", null, true, true);
+  if (data.charges_list && data.charges_list.length > 0) {
+    data.charges_list.forEach((e) => addRow(e.label || "—", e.amount, false, false, 3));
+  } else {
+    addRow("Aucune charge saisie", null, false, false, 3);
+  }
+  addRow("II - TOTAL CHARGES DE L'EXERCICE", data.total_charges, true);
+
+  // Results
+  addRow("III - VALEUR AJOUTÉE (I - II)", data.total_produits - data.total_charges, true, true);
+  addRow("IV - RÉSULTAT OPÉRATIONNEL", data.total_produits - data.total_charges, true);
+  addRow("V - RÉSULTAT FINANCIER", 0, false);
+  addRow("VI - RÉSULTAT ORDINAIRE AVANT IMPÔTS (IV + V)", data.total_produits - data.total_charges, true);
+  addRow("VII - Impôts exigibles sur résultats ordinaires", 0, false, false, 3);
+  addRow("VIII - RÉSULTAT NET DES ACTIVITÉS ORDINAIRES", data.total_produits - data.total_charges, true, true);
+  addRow("IX - Éléments extraordinaires (produits)", 0, false, false, 3);
+  addRow("     Éléments extraordinaires (charges)", 0, false, false, 3);
+  addRow("IX - RÉSULTAT EXTRAORDINAIRE", 0, true);
+  addRow("X - RÉSULTAT NET DE L'EXERCICE", data.resultat_net, true, true);
+
+  // Border
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  doc.rect(M, tableTop, W - 2 * M, y - tableTop);
+  doc.line(colNote - 8, tableTop, colNote - 8, y);
+
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(130, 130, 130);
+  doc.text(`Généré par AYMAFIN le ${new Date().toLocaleDateString("fr-DZ")}`, W / 2, H - 6, { align: "center" });
+
+  return doc;
+}
+
+// ── Journal PDF ───────────────────────────────────────────────────────────────
+async function generateJournalPDF(entries, period) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const W = 297, H = 210, M = 8;
+  const rowH = 6;
+  let y = M;
+
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, 0, W, H, "F");
+
+  // Title
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.8);
+  doc.rect(M, y, W - 2 * M, 14);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(0, 0, 0);
+  doc.text("JOURNAL COMPTABLE", W / 2, y + 6, { align: "center" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text(`Période : ${period}  —  ${entries.length} écriture(s)`, W / 2, y + 12, { align: "center" });
+  y += 18;
+
+  // Column layout
+  const cols = { date: M, type: M + 20, libelle: M + 45, debit: M + 145, credit: M + 175, montant: W - M };
+  const tableTop = y;
+
+  // Header
+  doc.setFillColor(180, 180, 180);
+  doc.rect(M, y, W - 2 * M, 7, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.text("DATE", cols.date + 1, y + 4.8);
+  doc.text("JOURNAL", cols.type + 1, y + 4.8);
+  doc.text("LIBELLÉ", cols.libelle + 1, y + 4.8);
+  doc.text("DÉBIT", cols.debit + 1, y + 4.8);
+  doc.text("CRÉDIT", cols.credit + 1, y + 4.8);
+  doc.text("MONTANT (DA)", cols.montant, y + 4.8, { align: "right" });
+  doc.setLineWidth(0.3);
+  doc.line(M, y, W - M, y);
+  doc.line(M, y + 7, W - M, y + 7);
+  [cols.type, cols.libelle, cols.debit, cols.credit].forEach((cx) => doc.line(cx, y, cx, y + 7));
+  y += 7;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+
+  let totalMontant = 0;
+  entries.forEach((e, i) => {
+    if (y > H - 18) {
+      doc.addPage();
+      doc.setFillColor(255, 255, 255);
+      doc.rect(0, 0, W, H, "F");
+      y = M;
+    }
+    if (i % 2 === 0) { doc.setFillColor(248, 248, 248); doc.rect(M, y, W - 2 * M, rowH, "F"); }
+    doc.setTextColor(0, 0, 0);
+    doc.text(String(e.date || ""), cols.date + 1, y + 4.2);
+    doc.text(String(e.journal_type || ""), cols.type + 1, y + 4.2);
+    const lib = doc.splitTextToSize(String(e.description || ""), cols.debit - cols.libelle - 3)[0];
+    doc.text(lib, cols.libelle + 1, y + 4.2);
+    doc.text(String(e.debit_account || ""), cols.debit + 1, y + 4.2);
+    doc.text(String(e.credit_account || ""), cols.credit + 1, y + 4.2);
+    doc.text(nfmtPDF(e.amount), cols.montant, y + 4.2, { align: "right" });
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.12);
+    doc.line(M, y + rowH, W - M, y + rowH);
+    totalMontant += parseFloat(e.amount) || 0;
+    y += rowH;
+  });
+
+  // Total row
+  doc.setFillColor(220, 220, 220);
+  doc.rect(M, y, W - 2 * M, rowH, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(0, 0, 0);
+  doc.text("TOTAL", cols.libelle + 1, y + 4.2);
+  doc.text(nfmtPDF(totalMontant), cols.montant, y + 4.2, { align: "right" });
+  y += rowH;
+
+  // Outer border + column lines
+  const tableH = y - tableTop;
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  doc.rect(M, tableTop, W - 2 * M, tableH);
+  [cols.type, cols.libelle, cols.debit, cols.credit].forEach((cx) =>
+    doc.line(cx, tableTop, cx, tableTop + tableH)
+  );
+
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(130, 130, 130);
+  doc.text(`Généré par AYMAFIN le ${new Date().toLocaleDateString("fr-DZ")}`, W / 2, H - 5, { align: "center" });
+
+  return doc;
+}
+
 // ── TCR component ─────────────────────────────────────────────────────────────
 function TCR({ period }) {
   const [data, setData] = useState(null);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     if (!period) return;
     api.get(`/accounting/tcr?period=${period}`).then((r) => setData(r.data)).catch(() => setData(null));
   }, [period]);
 
+  const handleDownload = async () => {
+    if (!data) return;
+    setDownloading(true);
+    try {
+      const doc = await generateTCRPDF(data, period);
+      await downloadPDF(doc, `tcr-${period}.pdf`);
+      toast.success("TCR exporté");
+    } catch { toast.error("Erreur export PDF"); }
+    finally { setDownloading(false); }
+  };
+
   if (!data) return (
     <div className="glass rounded-2xl p-12 text-center text-zinc-500">
       <FileSpreadsheet className="size-10 mx-auto mb-3 opacity-40" />
-      <p className="text-sm">Aucune donnée pour cette période.<br/>Saisissez d'abord vos charges et produits.</p>
+      <p className="text-sm">Aucune donnée pour cette période.<br />Saisissez d'abord vos charges et produits.</p>
     </div>
   );
 
   return (
-    <div className="grid lg:grid-cols-2 gap-4">
-      {/* Charges */}
-      <div className="glass rounded-2xl overflow-hidden">
-        <div className="px-5 py-3 bg-red-500/10 border-b border-white/5">
-          <h3 className="font-semibold text-red-400 text-sm">CHARGES</h3>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-white/5 text-xs text-zinc-500">
-              <th className="text-left px-4 py-2">Classe / Compte</th>
-              <th className="text-right px-4 py-2">Montant (DA)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.charges_detail.map((cls) => (
-              <React.Fragment key={cls.class}>
-                <tr className="bg-white/3 border-b border-white/5">
-                  <td className="px-4 py-2 font-medium text-xs text-zinc-300">
-                    <span className="font-mono text-[#60a5fa] mr-2">{cls.class}</span>{cls.name}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs font-semibold">{nfmt(cls.subtotal)}</td>
-                </tr>
-                {cls.accounts.map((acc) => (
-                  <tr key={acc.code} className="border-b border-white/5 hover:bg-white/2">
-                    <td className="px-4 py-1.5 text-zinc-500 text-xs pl-8">
-                      <span className="font-mono mr-2">{acc.code}</span>{acc.name}
-                    </td>
-                    <td className="px-4 py-1.5 text-right font-mono text-xs text-zinc-400">{nfmt(acc.amount)}</td>
-                  </tr>
-                ))}
-              </React.Fragment>
-            ))}
-            <tr className="border-t-2 border-red-500/30">
-              <td className="px-4 py-3 font-bold text-red-400 text-sm">TOTAL CHARGES</td>
-              <td className="px-4 py-3 text-right font-mono font-bold text-red-400">{nfmt(data.total_charges)}</td>
-            </tr>
-          </tbody>
-        </table>
+    <div>
+      <div className="flex justify-end mb-3">
+        <button onClick={handleDownload} disabled={downloading}
+          className="flex items-center gap-2 px-4 py-2 bg-[#2563eb] hover:bg-[#1d4ed8] rounded-xl text-sm font-medium transition disabled:opacity-50">
+          <Download className="size-4" />
+          {downloading ? "Export…" : "Télécharger PDF"}
+        </button>
       </div>
 
-      {/* Produits */}
-      <div className="glass rounded-2xl overflow-hidden">
-        <div className="px-5 py-3 bg-green-500/10 border-b border-white/5">
-          <h3 className="font-semibold text-green-400 text-sm">PRODUITS</h3>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-white/5 text-xs text-zinc-500">
-              <th className="text-left px-4 py-2">Classe / Compte</th>
-              <th className="text-right px-4 py-2">Montant (DA)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.produits_detail.map((cls) => (
-              <React.Fragment key={cls.class}>
-                <tr className="bg-white/3 border-b border-white/5">
-                  <td className="px-4 py-2 font-medium text-xs text-zinc-300">
-                    <span className="font-mono text-green-400 mr-2">{cls.class}</span>{cls.name}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs font-semibold">{nfmt(cls.subtotal)}</td>
+      <div className="grid lg:grid-cols-2 gap-4">
+        {/* Charges */}
+        <div className="glass rounded-2xl overflow-hidden">
+          <div className="px-5 py-3 bg-red-500/10 border-b border-white/5">
+            <h3 className="font-semibold text-red-400 text-sm">CHARGES</h3>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/5 text-xs text-zinc-500">
+                <th className="text-left px-4 py-2">Libellé</th>
+                <th className="text-right px-4 py-2">Montant (DA)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data.charges_list || []).map((e, i) => (
+                <tr key={i} className="border-b border-white/5 hover:bg-white/2">
+                  <td className="px-4 py-1.5 text-zinc-300 text-xs">{e.label || "—"}</td>
+                  <td className="px-4 py-1.5 text-right font-mono text-xs text-zinc-400">{nfmt(e.amount)}</td>
                 </tr>
-                {cls.accounts.map((acc) => (
-                  <tr key={acc.code} className="border-b border-white/5 hover:bg-white/2">
-                    <td className="px-4 py-1.5 text-zinc-500 text-xs pl-8">
-                      <span className="font-mono mr-2">{acc.code}</span>{acc.name}
-                    </td>
-                    <td className="px-4 py-1.5 text-right font-mono text-xs text-zinc-400">{nfmt(acc.amount)}</td>
-                  </tr>
-                ))}
-              </React.Fragment>
-            ))}
-            <tr className="border-t-2 border-green-500/30">
-              <td className="px-4 py-3 font-bold text-green-400 text-sm">TOTAL PRODUITS</td>
-              <td className="px-4 py-3 text-right font-mono font-bold text-green-400">{nfmt(data.total_produits)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+              ))}
+              <tr className="border-t-2 border-red-500/30">
+                <td className="px-4 py-3 font-bold text-red-400 text-sm">TOTAL CHARGES</td>
+                <td className="px-4 py-3 text-right font-mono font-bold text-red-400">{nfmt(data.total_charges)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-      {/* Result */}
-      <div className="lg:col-span-2 glass rounded-2xl p-5 flex items-center justify-between">
-        <span className="font-display font-bold text-lg">RÉSULTAT NET DE L'EXERCICE</span>
-        <span className={`text-2xl font-display font-bold ${data.resultat_net >= 0 ? "text-[#22c55e]" : "text-red-400"}`}>
-          {data.resultat_net >= 0 ? "Bénéfice : " : "Perte : "}{nfmt(Math.abs(data.resultat_net))}
-        </span>
+        {/* Produits */}
+        <div className="glass rounded-2xl overflow-hidden">
+          <div className="px-5 py-3 bg-green-500/10 border-b border-white/5">
+            <h3 className="font-semibold text-green-400 text-sm">PRODUITS</h3>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/5 text-xs text-zinc-500">
+                <th className="text-left px-4 py-2">Libellé</th>
+                <th className="text-right px-4 py-2">Montant (DA)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data.produits_list || []).map((e, i) => (
+                <tr key={i} className="border-b border-white/5 hover:bg-white/2">
+                  <td className="px-4 py-1.5 text-zinc-300 text-xs">{e.label || "—"}</td>
+                  <td className="px-4 py-1.5 text-right font-mono text-xs text-zinc-400">{nfmt(e.amount)}</td>
+                </tr>
+              ))}
+              <tr className="border-t-2 border-green-500/30">
+                <td className="px-4 py-3 font-bold text-green-400 text-sm">TOTAL PRODUITS</td>
+                <td className="px-4 py-3 text-right font-mono font-bold text-green-400">{nfmt(data.total_produits)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Result */}
+        <div className="lg:col-span-2 glass rounded-2xl p-5 flex items-center justify-between">
+          <span className="font-display font-bold text-lg">RÉSULTAT NET DE L'EXERCICE</span>
+          <span className={`text-2xl font-display font-bold ${data.resultat_net >= 0 ? "text-[#22c55e]" : "text-red-400"}`}>
+            {data.resultat_net >= 0 ? "Bénéfice : " : "Perte : "}{nfmt(Math.abs(data.resultat_net))}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -156,22 +526,19 @@ function BilanRow({ label, value, bold = false, color = "" }) {
 
 // ── Bilan component ───────────────────────────────────────────────────────────
 function Bilan({ period }) {
-  const [mode, setMode] = useState("view"); // "view" | "edit"
+  const [mode, setMode] = useState("view");
   const [values, setValues] = useState({});
   const [bilan, setBilan] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const load = useCallback(() => {
     if (!period) return;
-    api.get(`/accounting/bilan?period=${period}`).then((r) => {
-      setBilan(r.data);
-    }).catch(() => setBilan(null));
+    api.get(`/accounting/bilan?period=${period}`).then((r) => setBilan(r.data)).catch(() => setBilan(null));
   }, [period]);
 
-  // Also load raw form values from bilan_entries endpoint
   const loadRaw = useCallback(() => {
     if (!period) return;
-    // We'll infer form values from the bilan structure
     api.get(`/accounting/bilan?period=${period}`).then((r) => {
       if (!r.data) { setValues({}); return; }
       const b = r.data;
@@ -213,12 +580,21 @@ function Bilan({ period }) {
       Object.entries(values).forEach(([k, v]) => { payload[k] = parseFloat(v) || 0; });
       await api.post("/accounting/bilan", payload);
       toast.success("Bilan enregistré");
-      load();
-      loadRaw();
-      setMode("view");
+      load(); loadRaw(); setMode("view");
     } catch (e) {
       toast.error(e.response?.data?.detail || "Erreur");
     } finally { setSaving(false); }
+  };
+
+  const handleDownload = async () => {
+    if (!bilan) return;
+    setDownloading(true);
+    try {
+      const doc = await generateBilanPDF(bilan, period);
+      await downloadPDF(doc, `bilan-${period}.pdf`);
+      toast.success("Bilan exporté");
+    } catch { toast.error("Erreur export PDF"); }
+    finally { setDownloading(false); }
   };
 
   return (
@@ -226,6 +602,13 @@ function Bilan({ period }) {
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm text-zinc-400">Données bilantielles pour la période {period}</span>
         <div className="flex gap-2">
+          {bilan && mode === "view" && (
+            <button onClick={handleDownload} disabled={downloading}
+              className="flex items-center gap-2 px-4 py-2 bg-[#2563eb] hover:bg-[#1d4ed8] rounded-xl text-sm transition disabled:opacity-50">
+              <Download className="size-4" />
+              {downloading ? "Export…" : "Télécharger PDF"}
+            </button>
+          )}
           <button onClick={() => setMode(mode === "edit" ? "view" : "edit")}
             className="flex items-center gap-2 px-4 py-2 glass hover:bg-white/10 rounded-xl text-sm transition">
             {mode === "edit" ? "Annuler" : "Saisir / Modifier"}
@@ -233,8 +616,7 @@ function Bilan({ period }) {
           {mode === "edit" && (
             <button onClick={handleSave} disabled={saving}
               className="flex items-center gap-2 px-4 py-2 bg-[#2563eb] hover:bg-[#1d4ed8] rounded-xl text-sm transition disabled:opacity-50">
-              <Save className="size-4" />
-              Enregistrer
+              <Save className="size-4" /> Enregistrer
             </button>
           )}
         </div>
@@ -242,7 +624,6 @@ function Bilan({ period }) {
 
       {mode === "edit" ? (
         <div className="grid lg:grid-cols-2 gap-4">
-          {/* ACTIF form */}
           <div className="glass rounded-2xl p-5">
             <h3 className="font-semibold text-[#60a5fa] text-sm mb-3 pb-2 border-b border-white/5">ACTIF</h3>
             <p className="text-xs text-zinc-500 mb-3 font-semibold uppercase tracking-wide">Actif non courant</p>
@@ -260,8 +641,6 @@ function Bilan({ period }) {
             <BField label="Impôts et taxes récupérables" field="impots_taxes_recuperables" values={values} onChange={handleChange} indent />
             <BField label="Trésorerie et équivalents" field="tresorerie_actif" values={values} onChange={handleChange} indent />
           </div>
-
-          {/* PASSIF form */}
           <div className="glass rounded-2xl p-5">
             <h3 className="font-semibold text-[#a78bfa] text-sm mb-3 pb-2 border-b border-white/5">PASSIF</h3>
             <p className="text-xs text-zinc-500 mb-3 font-semibold uppercase tracking-wide">Capitaux propres</p>
@@ -281,7 +660,6 @@ function Bilan({ period }) {
         </div>
       ) : bilan ? (
         <div className="grid lg:grid-cols-2 gap-4">
-          {/* ACTIF view */}
           <div className="glass rounded-2xl overflow-hidden">
             <div className="px-5 py-3 bg-[#2563eb]/10 border-b border-white/5">
               <h3 className="font-semibold text-[#60a5fa] text-sm">ACTIF</h3>
@@ -291,7 +669,7 @@ function Bilan({ period }) {
                 <tr className="bg-white/3 border-b border-white/5">
                   <td colSpan={2} className="px-4 py-2 text-xs font-semibold text-zinc-400 uppercase tracking-wide">Actif non courant</td>
                 </tr>
-                <BilanRow label="Écarts d'acquisition" value={bilan.actif.non_courant.ecarts_acquisition} indent />
+                <BilanRow label="Écarts d'acquisition" value={bilan.actif.non_courant.ecarts_acquisition} />
                 <BilanRow label={`Immob. incorporelles (net: ${nfmt(bilan.actif.non_courant.immo_incorporelles.net)})`} value={bilan.actif.non_courant.immo_incorporelles.brut} />
                 <BilanRow label={`Immob. corporelles (net: ${nfmt(bilan.actif.non_courant.immo_corporelles.net)})`} value={bilan.actif.non_courant.immo_corporelles.brut} />
                 <BilanRow label="Immob. financières" value={bilan.actif.non_courant.immo_financieres} />
@@ -311,7 +689,6 @@ function Bilan({ period }) {
             </table>
           </div>
 
-          {/* PASSIF view */}
           <div className="glass rounded-2xl overflow-hidden">
             <div className="px-5 py-3 bg-[#a78bfa]/10 border-b border-white/5">
               <h3 className="font-semibold text-[#a78bfa] text-sm">PASSIF</h3>
@@ -346,7 +723,6 @@ function Bilan({ period }) {
             </table>
           </div>
 
-          {/* Equilibre */}
           <div className={`lg:col-span-2 rounded-xl p-4 flex items-center justify-between text-sm font-medium
             ${Math.abs(bilan.ecart) < 0.01 ? "bg-green-500/10 border border-green-500/20" : "bg-red-500/10 border border-red-500/20"}`}>
             <span>{Math.abs(bilan.ecart) < 0.01 ? "✅ Bilan équilibré" : "⚠️ Bilan déséquilibré"}</span>
@@ -387,8 +763,7 @@ function JournalModal({ period, onClose, onSaved }) {
     try {
       await api.post("/accounting/journal", { ...form, amount: parseFloat(form.amount) });
       toast.success("Écriture ajoutée");
-      onSaved();
-      onClose();
+      onSaved(); onClose();
     } catch (e) {
       toast.error(e.response?.data?.detail || "Erreur");
     } finally { setSaving(false); }
@@ -458,6 +833,7 @@ function Journal({ period }) {
   const [entries, setEntries] = useState([]);
   const [filterType, setFilterType] = useState("ALL");
   const [showModal, setShowModal] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const load = useCallback(() => {
     const params = new URLSearchParams();
@@ -471,20 +847,25 @@ function Journal({ period }) {
   const deleteEntry = async (id) => {
     try {
       await api.delete(`/accounting/journal/${id}`);
-      toast.success("Écriture supprimée");
-      load();
+      toast.success("Écriture supprimée"); load();
     } catch { toast.error("Erreur"); }
   };
 
+  const handleDownload = async () => {
+    if (entries.length === 0) { toast.error("Aucune écriture à exporter"); return; }
+    setDownloading(true);
+    try {
+      const doc = await generateJournalPDF(entries, period);
+      await downloadPDF(doc, `journal-${period}.pdf`);
+      toast.success("Journal exporté");
+    } catch { toast.error("Erreur export PDF"); }
+    finally { setDownloading(false); }
+  };
+
   const JOURNAL_COLORS = {
-    OUVERTURE: "text-purple-400",
-    ACHATS: "text-red-400",
-    BANQUE: "text-blue-400",
-    CAISSE: "text-yellow-400",
-    STOCKS: "text-orange-400",
-    OPERATIONS_DIVERS: "text-zinc-400",
-    SALAIRES: "text-pink-400",
-    VENTES: "text-green-400",
+    OUVERTURE: "text-purple-400", ACHATS: "text-red-400", BANQUE: "text-blue-400",
+    CAISSE: "text-yellow-400", STOCKS: "text-orange-400", OPERATIONS_DIVERS: "text-zinc-400",
+    SALAIRES: "text-pink-400", VENTES: "text-green-400",
   };
 
   return (
@@ -502,10 +883,17 @@ function Journal({ period }) {
             </button>
           ))}
         </div>
-        <button onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-[#2563eb] hover:bg-[#1d4ed8] rounded-xl text-sm font-medium transition">
-          <Plus className="size-4" /> Écriture
-        </button>
+        <div className="flex gap-2">
+          <button onClick={handleDownload} disabled={downloading || entries.length === 0}
+            className="flex items-center gap-2 px-4 py-2 glass hover:bg-white/10 rounded-xl text-sm transition disabled:opacity-40">
+            <Download className="size-4" />
+            {downloading ? "Export…" : "PDF"}
+          </button>
+          <button onClick={() => setShowModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-[#2563eb] hover:bg-[#1d4ed8] rounded-xl text-sm font-medium transition">
+            <Plus className="size-4" /> Écriture
+          </button>
+        </div>
       </div>
 
       <div className="glass rounded-2xl overflow-hidden">
@@ -524,25 +912,23 @@ function Journal({ period }) {
           <tbody>
             {entries.length === 0 ? (
               <tr><td colSpan={7} className="px-4 py-10 text-center text-zinc-500">Aucune écriture</td></tr>
-            ) : (
-              entries.map((e) => (
-                <tr key={e.id} className="border-b border-white/5 hover:bg-white/3 transition">
-                  <td className="px-4 py-2.5 font-mono text-xs text-zinc-400">{e.date}</td>
-                  <td className="px-4 py-2.5">
-                    <span className={`text-xs font-semibold ${JOURNAL_COLORS[e.journal_type] || "text-zinc-400"}`}>{e.journal_type}</span>
-                  </td>
-                  <td className="px-4 py-2.5 text-zinc-200 text-xs max-w-[200px] truncate">{e.description}</td>
-                  <td className="px-4 py-2.5 text-center font-mono text-xs text-[#60a5fa]">{e.debit_account}</td>
-                  <td className="px-4 py-2.5 text-center font-mono text-xs text-[#a78bfa]">{e.credit_account}</td>
-                  <td className="px-4 py-2.5 text-right font-mono text-xs font-medium">{nfmt(e.amount)}</td>
-                  <td className="px-4 py-2.5 text-right">
-                    <button onClick={() => deleteEntry(e.id)} className="text-zinc-600 hover:text-red-400 transition">
-                      <Trash2 className="size-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
+            ) : entries.map((e) => (
+              <tr key={e.id} className="border-b border-white/5 hover:bg-white/3 transition">
+                <td className="px-4 py-2.5 font-mono text-xs text-zinc-400">{e.date}</td>
+                <td className="px-4 py-2.5">
+                  <span className={`text-xs font-semibold ${JOURNAL_COLORS[e.journal_type] || "text-zinc-400"}`}>{e.journal_type}</span>
+                </td>
+                <td className="px-4 py-2.5 text-zinc-200 text-xs max-w-[200px] truncate">{e.description}</td>
+                <td className="px-4 py-2.5 text-center font-mono text-xs text-[#60a5fa]">{e.debit_account}</td>
+                <td className="px-4 py-2.5 text-center font-mono text-xs text-[#a78bfa]">{e.credit_account}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-xs font-medium">{nfmt(e.amount)}</td>
+                <td className="px-4 py-2.5 text-right">
+                  <button onClick={() => deleteEntry(e.id)} className="text-zinc-600 hover:text-red-400 transition">
+                    <Trash2 className="size-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -566,7 +952,6 @@ export default function FinancialStatements() {
   return (
     <AppLayout>
       <motion.div initial="hidden" animate="visible" variants={fade} transition={{ duration: 0.4 }}>
-        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-display font-bold">États financiers</h1>
@@ -578,7 +963,6 @@ export default function FinancialStatements() {
           />
         </div>
 
-        {/* Tabs */}
         <div className="flex gap-2 mb-6">
           {tabs.map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => setTab(id)}
@@ -587,8 +971,7 @@ export default function FinancialStatements() {
                   ? "bg-[#2563eb]/15 text-white border border-[#2563eb]/30"
                   : "text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent"
               }`}>
-              <Icon className="size-4" />
-              {label}
+              <Icon className="size-4" />{label}
             </button>
           ))}
         </div>

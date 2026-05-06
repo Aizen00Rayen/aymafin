@@ -354,7 +354,13 @@ export default function Reports() {
       const label = getDateRangeLabel(periodType, periodValue);
       const doc = await generatePDF(reportData, label);
       const filename = `aymafin-rapport-${periodValue}.pdf`;
-      doc.save(filename);
+      try {
+        const blob = doc.output("blob");
+        const file = new File([blob], filename, { type: "application/pdf" });
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: filename });
+        } else { doc.save(filename); }
+      } catch { doc.save(filename); }
       toast.success("Rapport PDF généré !");
     } catch (e) {
       toast.error("Erreur lors de la génération du PDF");
