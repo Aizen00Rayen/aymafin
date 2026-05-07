@@ -17,6 +17,7 @@ import DataEntry from "@/pages/DataEntry";
 import Treasury from "@/pages/Treasury";
 import FinancialStatements from "@/pages/FinancialStatements";
 import AIAnalysis from "@/pages/AIAnalysis";
+import Prevision from "@/pages/Prevision";
 import { Toaster } from "sonner";
 import { setBackendUrl, getStoredBackendUrl } from "@/lib/api";
 
@@ -98,6 +99,9 @@ export default function App() {
           } />
           <Route path="/ai-analysis" element={
             <ProtectedRoute><AIAnalysis /></ProtectedRoute>
+          } />
+          <Route path="/prevision" element={
+            <ProtectedRoute><Prevision /></ProtectedRoute>
           } />
         </Routes>
         <Toaster position="top-right" theme="dark" richColors />

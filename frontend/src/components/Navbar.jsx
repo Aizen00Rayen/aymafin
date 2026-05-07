@@ -64,6 +64,7 @@ export default function Navbar({ variant = "landing" }) {
         { to: "/treasury",             label: "Trésorerie",        testid: "nav-treasury" },
         { to: "/financial-statements", label: "États financiers",  testid: "nav-financials" },
         { to: "/ai-analysis",          label: "Analyse IA",        testid: "nav-ai" },
+        { to: "/prevision",            label: "Prévisions",        testid: "nav-prevision" },
         { to: "/reports",              label: "Rapports PDF",      testid: "nav-reports" },
       ]
     : [
