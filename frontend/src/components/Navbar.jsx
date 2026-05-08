@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../contexts/AuthContext";
 import { Menu, X, Globe, ChevronDown } from "lucide-react";
 
-const LOGO = "https://customer-assets.emergentagent.com/job_b01d42a3-f1ae-4d66-b970-d5ac0810ddbf/artifacts/2vbg1kvr_logo.png";
+const LOGO = "./logo.png";
 
 const LANGS = [
   { code: "fr", label: "FR", name: "Français" },
@@ -59,10 +59,14 @@ export default function Navbar({ variant = "landing" }) {
 
   const navItems = variant === "app"
     ? [
-        { to: "/dashboard", label: t("nav.dashboard"), testid: "nav-dashboard" },
-        { to: "/forecasting", label: t("nav.forecasting"), testid: "nav-forecasting" },
-        { to: "/reports", label: t("nav.reports"), testid: "nav-reports" },
-        { to: "/chat", label: t("nav.chat"), testid: "nav-chat" },
+        { to: "/dashboard",            label: "Tableau de bord",   testid: "nav-dashboard" },
+        { to: "/data-entry",           label: "Saisie",            testid: "nav-data-entry" },
+        { to: "/treasury",             label: "Trésorerie",        testid: "nav-treasury" },
+        { to: "/financial-statements", label: "États financiers",  testid: "nav-financials" },
+        { to: "/ai-analysis",          label: "Analyse IA",        testid: "nav-ai" },
+        { to: "/prevision",            label: "Prévisions",        testid: "nav-prevision" },
+        { to: "/chat",                 label: "Chat IA",           testid: "nav-chat" },
+        { to: "/reports",              label: "Rapports PDF",      testid: "nav-reports" },
       ]
     : [
         { href: "#features", label: t("nav.features"), testid: "nav-features" },

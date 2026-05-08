@@ -1,10 +1,9 @@
 """Auth helpers (password hashing, JWT, get_current_user, require_admin)."""
-import os
 import bcrypt
 import jwt
 from datetime import datetime, timezone, timedelta
 from fastapi import Request, Response, HTTPException, Depends
-from config import db, jwt_secret, JWT_ALGORITHM, ACCESS_TTL_MIN
+from config import get_db, jwt_secret, JWT_ALGORITHM, ACCESS_TTL_MIN
 
 
 def hash_password(p: str) -> str:
@@ -31,13 +30,19 @@ def create_access_token(user_id: str, email: str) -> str:
 def set_auth_cookie(response: Response, token: str):
     response.set_cookie(
         key="access_token", value=token,
-        httponly=True, secure=False, samesite="lax",
+        httponly=True, secure=True, samesite="none",
         max_age=ACCESS_TTL_MIN * 60, path="/",
     )
+    # Also expose token in header so mobile WebView can persist it in localStorage
+    response.headers["X-Access-Token"] = token
+    response.headers["Access-Control-Expose-Headers"] = "X-Access-Token, X-Bank-Used, X-Lang-Used"
 
 
 def clear_auth_cookie(response: Response):
     response.delete_cookie("access_token", path="/")
+
+
+_USER_SELECT = "id,email,name,role,onboarded,created_at,subscription"
 
 
 async def get_current_user(request: Request) -> dict:
@@ -52,14 +57,11 @@ async def get_current_user(request: Request) -> dict:
         payload = jwt.decode(token, jwt_secret(), algorithms=[JWT_ALGORITHM])
         if payload.get("type") != "access":
             raise HTTPException(status_code=401, detail="Invalid token type")
-        # filter out soft-deleted users on token validation
-        user = await db.users.find_one(
-            {"id": payload["sub"], "deleted_at": {"$exists": False}},
-            {"_id": 0, "password_hash": 0},
-        )
-        if not user:
+        db = await get_db()
+        res = await db.table("users").select(_USER_SELECT).eq("id", payload["sub"]).is_("deleted_at", "null").maybe_single().execute()
+        if not res.data:
             raise HTTPException(status_code=401, detail="User not found")
-        return user
+        return res.data
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:

@@ -171,7 +171,7 @@ export default function Landing() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 grid gap-8 md:grid-cols-3 md:items-start">
           <div>
             <div className="flex items-center gap-2.5 mb-3">
-              <img src="https://customer-assets.emergentagent.com/job_b01d42a3-f1ae-4d66-b970-d5ac0810ddbf/artifacts/2vbg1kvr_logo.png"
+              <img src="./logo.png"
                    alt="" className="size-8 rounded-lg" />
               <span className="font-display font-black text-base tracking-tight">AYMAFIN</span>
             </div>

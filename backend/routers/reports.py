@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends
 from starlette.responses import StreamingResponse
 
-from config import db
+from config import get_db
 from auth_utils import get_current_user
 from finance import compute_analysis, compute_forecasts
 from pdf_builder import build_pdf
@@ -26,29 +26,30 @@ async def list_banks():
 
 @router.get("/reports")
 async def list_reports(user: dict = Depends(get_current_user)):
-    items = await db.reports.find(
-        {"user_id": user["id"], "deleted_at": {"$exists": False}}, {"_id": 0},
-    ).sort("created_at", -1).to_list(200)
-    return items
+    db = await get_db()
+    res = await db.table("reports").select("*").eq("user_id", user["id"]).is_("deleted_at", "null").order("created_at", desc=True).limit(200).execute()
+    return res.data or []
 
 
 @router.post("/reports")
 async def create_report(user: dict = Depends(get_current_user)):
-    biz = await db.businesses.find_one({"user_id": user["id"]}, {"_id": 0})
-    if not biz:
+    db = await get_db()
+    biz_res = await db.table("businesses").select("*").eq("user_id", user["id"]).maybe_single().execute()
+    if not biz_res.data:
         raise HTTPException(status_code=404, detail="No business data")
-    # Plan gate: max_reports
+    biz = biz_res.data
+
     tier = get_effective_tier(user)
     limits = PLANS[tier]["limits"]
     if limits.get("max_reports", -1) != -1:
-        existing = await db.reports.count_documents(
-            {"user_id": user["id"], "deleted_at": {"$exists": False}},
-        )
+        count_res = await db.table("reports").select("id", count="exact").eq("user_id", user["id"]).is_("deleted_at", "null").execute()
+        existing = count_res.count or 0
         if existing >= limits["max_reports"]:
             raise HTTPException(
                 status_code=402,
                 detail={"code": "report_limit_reached", "tier": tier, "max": limits["max_reports"]},
             )
+
     rid = str(uuid.uuid4())
     doc = {
         "id": rid,
@@ -58,7 +59,7 @@ async def create_report(user: dict = Depends(get_current_user)):
         "created_at": datetime.now(timezone.utc).isoformat(),
         "snapshot": compute_analysis(biz),
     }
-    await db.reports.insert_one(doc)
+    await db.table("reports").insert(doc).execute()
     return {"id": rid, "title": doc["title"]}
 
 
@@ -67,19 +68,22 @@ async def download_report(
     report_id: str, bank: str = "generic", lang: str = "en",
     user: dict = Depends(get_current_user),
 ):
-    rep = await db.reports.find_one(
-        {"id": report_id, "user_id": user["id"], "deleted_at": {"$exists": False}}, {"_id": 0},
-    )
-    if not rep:
+    db = await get_db()
+    rep_res = await db.table("reports").select("*").eq("id", report_id).eq("user_id", user["id"]).is_("deleted_at", "null").maybe_single().execute()
+    if not rep_res.data:
         raise HTTPException(status_code=404, detail="Report not found")
-    biz = await db.businesses.find_one({"user_id": user["id"]}, {"_id": 0})
-    if not biz:
+    rep = rep_res.data
+
+    biz_res = await db.table("businesses").select("*").eq("user_id", user["id"]).maybe_single().execute()
+    if not biz_res.data:
         raise HTTPException(status_code=404, detail="No business")
+    biz = biz_res.data
+
     analysis = rep.get("snapshot") or compute_analysis(biz)
     forecasts = compute_forecasts(biz, 12)
     bank_code = bank if bank in BANKS else "generic"
     lang_code = lang if lang in PDF_I18N else "en"
-    # Enforce plan-based bank gating
+
     tier = get_effective_tier(user)
     allowed = PLANS[tier]["limits"].get("banks", ["generic"])
     if allowed != "all" and bank_code not in allowed:
@@ -87,6 +91,7 @@ async def download_report(
             status_code=402,
             detail={"code": "bank_locked", "tier": tier, "bank": bank_code, "allowed": allowed},
         )
+
     pdf_bytes = build_pdf(biz, analysis, forecasts, lang=lang_code, bank_code=bank_code)
     return StreamingResponse(
         io.BytesIO(pdf_bytes),

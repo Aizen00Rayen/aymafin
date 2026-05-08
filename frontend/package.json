@@ -2,7 +2,10 @@
   "name": "frontend",
   "version": "0.1.0",
   "private": true,
+  "homepage": ".",
   "dependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
     "@hookform/resolvers": "^5.0.1",
     "@radix-ui/react-accordion": "^1.2.8",
     "@radix-ui/react-alert-dialog": "^1.1.11",
@@ -33,6 +36,8 @@
     "@radix-ui/react-tooltip": "^1.2.4",
     "@react-three/drei": "10.0.6",
     "@react-three/fiber": "9.1.2",
+    "ajv": "^8.20.0",
+    "ajv-keywords": "^5.1.0",
     "axios": "^1.8.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -44,6 +49,7 @@
     "i18next": "^26.0.8",
     "i18next-browser-languagedetector": "^8.2.1",
     "input-otp": "^1.4.2",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.507.0",
     "next-themes": "^0.4.6",
     "react": "^19.0.0",
@@ -65,7 +71,9 @@
   "scripts": {
     "start": "craco start",
     "build": "craco build",
-    "test": "craco test"
+    "test": "craco test",
+    "cap:build": "craco build && npx cap sync android",
+    "cap:open": "npx cap open android"
   },
   "browserslist": {
     "production": [
@@ -81,8 +89,8 @@
   },
   "devDependencies": {
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
+    "@capacitor/cli": "^6.0.0",
     "@craco/craco": "^7.1.0",
-    "@emergentbase/visual-edits": "https://assets.emergent.sh/npm/emergentbase-visual-edits-1.0.8.tgz",
     "@eslint/js": "9.23.0",
     "autoprefixer": "^10.4.20",
     "eslint": "9.23.0",
@@ -92,7 +100,8 @@
     "eslint-plugin-react-hooks": "5.2.0",
     "globals": "15.15.0",
     "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.17"
+    "tailwindcss": "^3.4.17",
+    "typescript": "^6.0.3"
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }
