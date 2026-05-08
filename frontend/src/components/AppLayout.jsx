@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import {
   LayoutDashboard, BookOpen, Wallet, BarChart3, Brain,
-  FileText, Settings, LogOut, Shield, TrendingUp,
+  FileText, Settings, LogOut, Shield, TrendingUp, MessageSquare,
 } from "lucide-react";
 import Navbar from "./Navbar";
 
@@ -18,6 +18,7 @@ export default function AppLayout({ children }) {
     { to: "/financial-statements", label: "États financiers",   icon: BarChart3,       color: "#A78BFA" },
     { to: "/ai-analysis",          label: "Analyse IA",         icon: Brain,           color: "#FF6B6B" },
     { to: "/prevision",            label: "Prévisions",         icon: TrendingUp,      color: "#FF79C6" },
+    { to: "/chat",                 label: "Chat IA",            icon: MessageSquare,   color: "#A78BFA" },
     { to: "/reports",              label: "Rapports PDF",       icon: FileText,        color: "#34D399" },
     { to: "/settings",             label: "Paramètres",         icon: Settings,        color: "#64748B" },
     ...(user?.role === "admin"

@@ -477,18 +477,121 @@ async function handleChat(method: string, path: string, req: Request, origin: st
   try { user = await getUser(req); } catch (e) { return err(String((e as Error).message), 401, origin); }
   const db = getDB();
   const uid = String(user.id);
+
   if (method === "GET" && path === "/chat/history") {
-    const res = await db.from("chat_history").select("*").eq("user_id", uid).order("created_at",{ascending:true}).limit(200);
+    const res = await db.from("chat_history").select("*").eq("user_id", uid).order("created_at", { ascending: true }).limit(200);
     return json(res.data || [], 200, {}, origin);
   }
+
+  if (method === "DELETE" && path === "/chat/history") {
+    await db.from("chat_history").delete().eq("user_id", uid);
+    return json({ ok: true }, 200, {}, origin);
+  }
+
   if (method === "POST" && path === "/chat") {
     const body = await req.json();
     const msg = String(body.message || "").trim();
     if (!msg) return err("Message vide", 400, origin);
+
+    // Fetch recent conversation history (last 10 exchanges) for context
+    const histRes = await db.from("chat_history").select("message,reply").eq("user_id", uid).order("created_at", { ascending: false }).limit(10);
+    const recentHistory = ((histRes.data || []) as Array<Record<string, string>>).reverse();
+
+    // Fetch financial context: last 3 periods TCR
+    const periodsRes = await db.from("accounting_entries").select("period").eq("user_id", uid);
+    const bilanPeriods = await db.from("bilan_entries").select("period").eq("user_id", uid);
+    const periods = [...new Set([
+      ...(periodsRes.data || []).map((r: Record<string, unknown>) => String(r.period)),
+      ...(bilanPeriods.data || []).map((r: Record<string, unknown>) => String(r.period)),
+    ])].filter(Boolean).sort().reverse();
+
+    let financialContext = "";
+    if (periods.length > 0) {
+      const tcrLines: string[] = [];
+      for (const period of periods.slice(0, 3)) {
+        const entries = ((await db.from("accounting_entries").select("entry_type,amount,label").eq("user_id", uid).eq("period", period)).data || []) as Array<Record<string, unknown>>;
+        const tc = entries.filter(e => e.entry_type === "charge").reduce((s, e) => s + Number(e.amount), 0);
+        const tp = entries.filter(e => e.entry_type === "produit").reduce((s, e) => s + Number(e.amount), 0);
+        tcrLines.push(`  - ${period} : Produits = ${Math.round(tp).toLocaleString("fr-DZ")} DA | Charges = ${Math.round(tc).toLocaleString("fr-DZ")} DA | Résultat net = ${Math.round(tp - tc).toLocaleString("fr-DZ")} DA`);
+      }
+      financialContext = `\n\nDonnées financières réelles (${periods.length} période(s)) :\n${tcrLines.join("\n")}`;
+    }
+
+    // Treasury summary
+    const trsRes = await db.from("treasury_entries").select("type,amount").eq("user_id", uid);
+    const trs = (trsRes.data || []) as Array<Record<string, unknown>>;
+    if (trs.length > 0) {
+      const inc = trs.filter(e => e.type === "income").reduce((s, e) => s + Number(e.amount), 0);
+      const exp = trs.filter(e => e.type === "expense").reduce((s, e) => s + Number(e.amount), 0);
+      financialContext += `\nTrésorerie globale : Entrées = ${Math.round(inc).toLocaleString("fr-DZ")} DA | Sorties = ${Math.round(exp).toLocaleString("fr-DZ")} DA | Solde = ${Math.round(inc - exp).toLocaleString("fr-DZ")} DA`;
+    }
+
+    // Business profile
+    const bizRes = await db.from("businesses").select("business_name,business_type,country").eq("user_id", uid).maybeSingle();
+    const biz = bizRes.data as Record<string, unknown> | null;
+    const bizContext = biz ? `Entreprise : ${biz.business_name || "N/A"} | Secteur : ${biz.business_type || "N/A"} | Pays : ${biz.country || "Algérie"}` : "Aucun profil entreprise configuré.";
+
+    const msgId = crypto.randomUUID();
     const now = new Date().toISOString();
-    await db.from("chat_history").insert({ id: crypto.randomUUID(), user_id: uid, message: msg, reply: "", created_at: now });
-    const reply = "Analyse en cours... Veuillez configurer votre clé Gemini dans les paramètres du serveur.";
-    await db.from("chat_history").update({ reply }).eq("user_id", uid).eq("created_at", now);
+    await db.from("chat_history").insert({ id: msgId, user_id: uid, message: msg, reply: "", created_at: now });
+
+    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+    let reply = "";
+
+    if (apiKey) {
+      try {
+        const systemPrompt = `Tu es AYMA, assistante financière IA pour les PME algériennes. Tu es experte en comptabilité SCF algérienne, en analyse financière et en gestion d'entreprise. Tu réponds toujours en français, de façon professionnelle, claire et actionnable.
+
+${bizContext}${financialContext}
+
+Instructions :
+- Utilise les données financières réelles ci-dessus pour répondre précisément
+- Si une donnée manque, dis-le et indique où la saisir dans l'application
+- Réponds en 2-4 paragraphes max, sois concise et directe
+- Utilise des chiffres précis quand tu en as
+- Donne toujours une recommandation concrète`;
+
+        const messages: Array<{ role: string; content: string }> = [];
+        for (const h of recentHistory) {
+          if (h.message) messages.push({ role: "user", content: h.message });
+          if (h.reply) messages.push({ role: "assistant", content: h.reply });
+        }
+        messages.push({ role: "user", content: msg });
+
+        const resp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 1024, system: systemPrompt, messages }),
+        });
+        if (resp.ok) {
+          const aiData = await resp.json() as Record<string, unknown>;
+          const content = (aiData.content as Array<Record<string, unknown>>)?.[0]?.text as string;
+          if (content) reply = content;
+        }
+      } catch (e) {
+        console.error("[chat] Claude error:", e);
+      }
+    }
+
+    if (!reply) {
+      const q = msg.toLowerCase();
+      const hasData = financialContext.length > 0;
+      if (q.includes("chiffre") || q.includes("revenu") || q.includes("produit") || q.includes("vente")) {
+        reply = hasData ? `Voici vos revenus récents :${financialContext}\n\nPour une analyse détaillée, consultez la page "États financiers" ou "Analyse IA".` : "Vous n'avez pas encore de données financières. Allez dans 'Saisie des données' pour enregistrer vos produits.";
+      } else if (q.includes("charge") || q.includes("dépense") || q.includes("coût")) {
+        reply = hasData ? `Voici vos charges :${financialContext}\n\nIdentifiez les postes les plus importants pour optimiser vos dépenses.` : "Aucune charge enregistrée. Utilisez 'Saisie des données' pour commencer.";
+      } else if (q.includes("résultat") || q.includes("bénéfice") || q.includes("profit") || q.includes("perte")) {
+        reply = hasData ? `Résultats nets :${financialContext}` : "Saisissez vos produits et charges pour calculer le résultat net.";
+      } else if (q.includes("trésor") || q.includes("liquidité") || q.includes("cash")) {
+        reply = hasData ? `Situation de trésorerie :${financialContext}` : "Allez dans 'Trésorerie' pour enregistrer vos mouvements de caisse.";
+      } else {
+        reply = hasData
+          ? `Bonjour ! Je suis AYMA, votre assistante financière.${financialContext}\n\nPosez-moi des questions sur votre rentabilité, vos charges, vos revenus ou votre trésorerie.`
+          : "Bonjour ! Je suis AYMA. Je n'ai pas encore de données financières pour votre entreprise. Commencez par saisir vos données dans 'Saisie des données', puis je pourrai vous donner des conseils personnalisés.";
+      }
+    }
+
+    await db.from("chat_history").update({ reply }).eq("id", msgId);
     return json({ reply }, 200, {}, origin);
   }
   return err("Not found", 404, origin);
